@@ -763,8 +763,8 @@ def insight_node(state: AgentState) -> AgentState:
             state["current_phase"] = "strategy_built"
             state["messages"].append("✓ Using cached insights (no LLM call)")
 
-            # Extract experiment plan from cached strategy
-            state["experiment_plan"] = strategy.get("experiment_plan", {})
+            # Extract execution timeline from cached strategy
+            state["experiment_plan"] = strategy.get("execution_timeline", {})
 
         else:
             # Scenario 2: New files present - generate with context
@@ -781,8 +781,8 @@ def insight_node(state: AgentState) -> AgentState:
             else:
                 state["messages"].append("🤖 Generated fresh insights from new data")
 
-            # Extract experiment plan
-            state["experiment_plan"] = strategy.get("experiment_plan", {})
+            # Extract execution timeline from strategy
+            state["experiment_plan"] = strategy.get("execution_timeline", {})
 
         # Cache insights back to uploaded_files for future sessions
         # This allows reuse of insights without re-analyzing same files
@@ -794,7 +794,7 @@ def insight_node(state: AgentState) -> AgentState:
             # In a more sophisticated implementation, could extract file-specific insights
             insights_to_cache = {
                 "strategy": strategy,
-                "experiment_plan": state["experiment_plan"],
+                "execution_timeline": state["experiment_plan"],
                 "generated_at": None,  # Will be set by database
             }
 

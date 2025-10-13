@@ -6,6 +6,7 @@ import json
 from typing import Dict, Any
 from ..llm.gemini import get_gemini
 from ..modules.data_loader import DataLoader
+from ..modules.execution_planner import generate_execution_timeline, validate_execution_timeline
 
 
 INSIGHT_SYSTEM_INSTRUCTION = """You are an expert campaign strategist specializing in digital advertising optimization.
@@ -70,25 +71,6 @@ Based on this data, create a strategy that includes:
    - Recommend budget allocation based on historical ROI
    - Provide specific rationale with numbers
 
-5. EXPERIMENT PLAN (ACCELERATED 7-DAY PARALLEL TESTING):
-   Design parallel experiments to test platform, audience, and creative simultaneously in 7 days:
-
-   CRITICAL INSTRUCTIONS FOR PARALLEL TESTING:
-   - Test 4-6 smart COMBINATIONS of platform+audience+creative together (not sequentially)
-   - Use historical data to skip obvious losers and focus budget on viable options
-   - Allocate budgets across combinations (e.g., 30% to best bet, 25% to hedge, etc.)
-   - Each combination needs 15-20 conversions minimum for statistical confidence
-   - Include interaction effects (some platform+creative combos work better together)
-
-   For the experiment plan, specify:
-   - Test matrix: 4-6 combinations with platform/audience/creative for each
-   - Budget allocation per combination (must sum to 100%)
-   - Rationale for each combination based on historical data
-   - Memory-based optimizations: What obvious losers are you skipping? Why?
-   - Decision criteria: Min conversions, confidence level, primary metric
-   - Evaluation schedule: Day 3 check (flag issues), Day 7 final decision
-   - Hypotheses for platform, audience, creative, and interaction effects
-
 CRITICAL: Respond with valid JSON in this EXACT format. All fields marked with [] MUST be arrays/lists, all fields marked with {{}} MUST be objects/dicts:
 {{
   "insights": {{
@@ -111,56 +93,12 @@ CRITICAL: Respond with valid JSON in this EXACT format. All fields marked with [
     "priorities": ["Google Ads", "Meta"],  // MUST be array of platform names
     "budget_split": {{"Google Ads": 0.6, "Meta": 0.4}},  // MUST be object with numeric values (0-1)
     "rationale": "explanation text"  // string
-  }},
-  "experiment_plan": {{
-    "mode": "accelerated",  // string
-    "total_duration_days": 7,  // number
-    "approach": "parallel_testing",  // string
-    "day_1_to_7": {{
-      "name": "Parallel Multi-Variable Test",  // string
-      "description": "Test platform, audience, and creative simultaneously",  // string
-      "test_matrix": {{
-        "combinations": [  // MUST be array of combination objects
-          {{
-            "id": "combo_1",  // string
-            "label": "Platform + Audience + Creative",  // string
-            "platform": "TikTok",  // string
-            "audience": "Interest targeting",  // string
-            "creative": "UGC video",  // string
-            "budget_allocation": "30%",  // string percentage
-            "rationale": "Why this combination makes sense"  // string
-          }}
-          // Include 4-6 combinations total
-        ]
-      }},
-      "decision_criteria": {{
-        "min_conversions_per_combo": 15,  // number
-        "confidence_level": 0.90,  // number (0-1)
-        "primary_metric": "CPA",  // string
-        "secondary_metrics": ["ROAS", "CTR"]  // MUST be array
-      }},
-      "evaluation_schedule": {{
-        "day_3": "Check preliminary results",  // string
-        "day_7": "Final evaluation and decision"  // string
-      }},
-      "hypotheses": {{
-        "platform": "Platform hypothesis with data",  // string
-        "audience": "Audience hypothesis with data",  // string
-        "creative": "Creative hypothesis with data",  // string
-        "interaction": "Interaction effect hypothesis"  // string
-      }},
-      "expected_outcome": "What we expect to learn in 7 days",  // string
-      "statistical_power": "Confidence calculation explanation"  // string
-    }},
-    "memory_based_optimizations": {{
-      "skipped_tests": ["What we're NOT testing and why"],  // MUST be array
-      "confident_decisions": ["What we know from historical data"],  // MUST be array
-      "hedge_tests": ["What we're testing as backup options"]  // MUST be array
-    }}
   }}
 }}
 
 DO NOT return any field as a plain string if it should be an array or object!
+
+NOTE: Execution timeline will be generated separately based on this strategy.
 """
 
 
@@ -246,5 +184,26 @@ def generate_insights_and_strategy(
         temperature=0.7,
         task_name="Strategy & Insights Generation",
     )
+
+    # Generate execution timeline based on strategy
+    try:
+        execution_timeline = generate_execution_timeline(state, strategy)
+
+        # Validate timeline
+        is_valid, errors = validate_execution_timeline(execution_timeline)
+        if not is_valid:
+            # Log validation errors but continue with strategy
+            print(f"⚠ Timeline validation warnings: {errors}")
+
+        # Add timeline to strategy
+        strategy["execution_timeline"] = execution_timeline
+
+    except Exception as e:
+        # If timeline generation fails, continue with strategy only
+        print(f"⚠ Execution timeline generation failed: {str(e)}")
+        strategy["execution_timeline"] = {
+            "error": str(e),
+            "fallback": "Manual timeline planning required"
+        }
 
     return strategy

@@ -72,7 +72,7 @@ The router is **LLM-powered** (temperature: 0.3) and examines:
 
 **Initialize Path** (new project with historical data):
 1. `data_collection_node`: Merges uploaded files into state, optionally searches web for benchmarks via Tavily
-2. `insight_node`: Calls `generate_insights_and_strategy()` with historical data → generates strategy + 3-week experiment plan
+2. `insight_node`: Calls `generate_insights_and_strategy()` with historical data → generates strategy + flexible execution timeline (7-30 days)
 3. `campaign_setup_node`: Calls `generate_campaign_config()` → produces TikTok/Meta configs
 4. `save_state_node`: Persists state to Supabase via `ProjectPersistence.save_project()`
 
@@ -123,6 +123,7 @@ All LLM calls use descriptive `task_name` for progress tracking:
 |------|-------------|--------|---------|
 | Router Decision | 0.3 | `router.py` | Decides next workflow step |
 | Strategy & Insights Generation | 0.7 | `insight.py` | Creates campaign strategy |
+| Execution Timeline Planning | 0.6 | `execution_planner.py` | Designs flexible test timeline |
 | Campaign Configuration | 0.5 | `campaign.py` | Generates platform configs |
 | Performance Analysis | 0.3 | `reflection.py` | Analyzes experiment results |
 | Optimization Patch Generation | 0.6 | `reflection.py` | Creates optimization patches |
@@ -165,39 +166,70 @@ Output files are versioned: `campaign_{project_id}_v{iteration}.json`
 
 If `TAVILY_API_KEY` is set, `data_collection_node` searches for market benchmarks based on product description. If not set, agent proceeds without web data.
 
-## Accelerated Learning Feature (NEW)
+## Flexible Execution Timeline (NEW)
 
-The agent now supports **7-day parallel testing** instead of 21-day sequential testing, reducing learning time by 66%.
+The agent now supports **LLM-powered flexible execution planning** with adaptive timelines from 7-30 days based on campaign complexity and budget.
 
 **How it works:**
-- `insight.py` generates parallel experiment plans testing platform+audience+creative simultaneously
-- LLM creates 4-6 smart combinations based on historical data (e.g., "TikTok + Interest + UGC" at 30% budget)
-- Memory-based skipping: Uses historical winners to avoid testing obvious losers
-- Statistical validation: Each combination needs 15-20 conversions for 90% confidence
+- LLM analyzes historical data, budget constraints, and strategic hypotheses
+- Designs 2-3 phases (short/medium/long-term) with optimal budget allocation
+- Sets checkpoints at statistically meaningful intervals
+- Adapts timeline length based on:
+  - Number of critical hypotheses to test
+  - Available budget for testing
+  - Expected conversion volume
+  - Complexity of campaign variables
 
 **Key files:**
-- `src/modules/insight.py`: Updated prompt template for parallel experiments (line 73-90)
-- `src/modules/accelerated_learning.py`: Helper functions for validation and statistics
-- `cli.py`: New display function for combination matrix (line 252-356)
+- `src/modules/execution_planner.py`: LLM-powered timeline generator with validation
+- `src/modules/insight.py`: Calls execution planner after generating strategy
+- `cli.py`: New display function for execution timeline (line 200-324)
 
 **Generated plan structure:**
 ```json
 {
-  "mode": "accelerated",
-  "total_duration_days": 7,
-  "day_1_to_7": {
-    "test_matrix": {
-      "combinations": [/* 4-6 combos */]
-    },
-    "decision_criteria": {
-      "min_conversions_per_combo": 15,
-      "confidence_level": 0.90
-    }
+  "timeline": {
+    "total_duration_days": 14,
+    "reasoning": "Why this timeline length was chosen",
+    "phases": [
+      {
+        "name": "Short-term Discovery",
+        "duration_days": 5,
+        "start_day": 1,
+        "end_day": 5,
+        "budget_allocation_percent": 35,
+        "objectives": ["Objective 1", "Objective 2"],
+        "test_combinations": [/* Platform + Audience + Creative combos */],
+        "success_criteria": ["Criteria 1"],
+        "decision_triggers": {
+          "proceed_if": "CPA < $30 in at least 2 combinations",
+          "pause_if": "CPA > $50 across all combinations"
+        }
+      }
+      /* Additional phases... */
+    ],
+    "checkpoints": [
+      {
+        "day": 3,
+        "purpose": "Early signal check",
+        "review_focus": ["Check for obvious losers"],
+        "action_required": false
+      }
+    ]
+  },
+  "statistical_requirements": {
+    "min_conversions_per_combo": 15,
+    "confidence_level": 0.90
   }
 }
 ```
 
-See `docs/ACCELERATED_LEARNING.md` for full documentation.
+**Key benefits:**
+- Adapts timeline to campaign needs (not rigid 7 or 21 days)
+- Strategic budget allocation across phases
+- Clear checkpoint schedule with review frequencies
+- Risk mitigation with early warning signals
+- Data-driven phase design based on historical performance
 
 ## Data Collection & Enhancement
 

@@ -180,179 +180,147 @@ def print_strategy_details(strategy):
 
 def print_experiment_plan(experiment_plan):
     """
-    Print experiment plan - handles both sequential (3-week) and parallel (7-day) formats
+    Print execution timeline plan
 
     Args:
-        experiment_plan: Experiment plan dictionary
+        experiment_plan: Execution timeline dictionary
     """
     if not experiment_plan:
         return
 
-    # Detect format: accelerated parallel or traditional sequential
-    mode = experiment_plan.get("mode", "sequential")
-
-    if mode == "accelerated":
-        print_accelerated_experiment_plan(experiment_plan)
+    # Check if this is the new execution timeline format
+    if "timeline" in experiment_plan:
+        print_execution_timeline(experiment_plan)
     else:
-        print_sequential_experiment_plan(experiment_plan)
+        # Fallback for old format (shouldn't happen but safe)
+        print("\n⚠ Legacy experiment plan format detected")
+        print(json.dumps(experiment_plan, indent=2))
 
 
-def print_sequential_experiment_plan(experiment_plan):
-    """Print traditional 3-week sequential experiment plan"""
+def print_execution_timeline(execution_plan):
+    """Print flexible execution timeline plan"""
+    timeline = execution_plan.get("timeline", {})
+
+    if not timeline:
+        print("\n⚠ No timeline data available")
+        return
+
+    total_days = timeline.get("total_duration_days", 0)
+    phases = timeline.get("phases", [])
+    checkpoints = timeline.get("checkpoints", [])
+
     print("\n" + "=" * 60)
-    print("  EXPERIMENT PLAN (3 WEEKS - SEQUENTIAL)")
+    print(f"  EXECUTION TIMELINE ({total_days} DAYS)")
     print("=" * 60)
 
-    for week_key in ["week_1", "week_2", "week_3"]:
-        week = experiment_plan.get(week_key, {})
-        if not week:
-            continue
+    # Print reasoning
+    if timeline.get("reasoning"):
+        print(f"\n💡 Timeline Design:")
+        print(f"  {timeline['reasoning']}")
 
-        week_num = week_key.split("_")[1]
-        print(f"\n🔬 WEEK {week_num}: {week.get('name', 'Unnamed Test')}")
+    # Print phases
+    print(f"\n📅 TESTING PHASES ({len(phases)} phases):")
+    print("─" * 60)
+
+    for i, phase in enumerate(phases, 1):
+        phase_name = phase.get("name", f"Phase {i}")
+        duration = phase.get("duration_days", 0)
+        start = phase.get("start_day", 0)
+        end = phase.get("end_day", 0)
+        budget_pct = phase.get("budget_allocation_percent", 0)
+
+        print(f"\n[{i}] {phase_name.upper()}")
+        print(f"    Days {start}-{end} ({duration} days) | Budget: {budget_pct}%")
+
+        # Objectives
+        objectives = phase.get("objectives", [])
+        if objectives:
+            print(f"    Objectives:")
+            for obj in objectives:
+                print(f"      • {obj}")
+
+        # Test combinations
+        combos = phase.get("test_combinations", [])
+        if combos:
+            print(f"    Test Combinations ({len(combos)}):")
+            for combo in combos:
+                combo_budget = combo.get("budget_percent", 0)
+                print(f"      [{combo_budget}%] {combo.get('platform', '?')} + "
+                      f"{combo.get('audience', '?')[:25]} + "
+                      f"{combo.get('creative', '?')[:20]}")
+                if combo.get("rationale"):
+                    rationale = combo["rationale"]
+                    if len(rationale) > 60:
+                        rationale = rationale[:57] + "..."
+                    print(f"           → {rationale}")
+
+        # Success criteria
+        criteria = phase.get("success_criteria", [])
+        if criteria:
+            print(f"    Success Criteria:")
+            for criterion in criteria:
+                print(f"      ✓ {criterion}")
+
+        # Decision triggers
+        triggers = phase.get("decision_triggers", {})
+        if triggers:
+            print(f"    Decision Triggers:")
+            if triggers.get("proceed_if"):
+                print(f"      → Proceed if: {triggers['proceed_if']}")
+            if triggers.get("pause_if"):
+                print(f"      ⚠ Pause if: {triggers['pause_if']}")
+            if triggers.get("scale_if"):
+                print(f"      ⚡ Scale if: {triggers['scale_if']}")
+
+    # Print checkpoints
+    if checkpoints:
+        print(f"\n📍 CHECKPOINT SCHEDULE ({len(checkpoints)} checkpoints):")
         print("─" * 60)
 
-        if week.get("hypothesis"):
-            print(f"  Hypothesis:")
-            print(f"    {week['hypothesis']}")
+        for checkpoint in checkpoints:
+            day = checkpoint.get("day", 0)
+            purpose = checkpoint.get("purpose", "Review")
+            required = checkpoint.get("action_required", False)
+            action_mark = "🔴" if required else "🟡"
 
-        if week.get("variations"):
-            variations = week["variations"]
-            if isinstance(variations, list):
-                print(f"\n  Variations:")
-                for var in variations:
-                    print(f"    • {var}")
-            else:
-                print(f"\n  Variations: {variations}")
+            print(f"\n  {action_mark} Day {day}: {purpose}")
 
-        if week.get("control"):
-            print(f"\n  Control Setup:")
-            control = week["control"]
-            if isinstance(control, dict):
-                for key, val in control.items():
-                    print(f"    {key}: {val}")
-            else:
-                print(f"    {control}")
+            review_focus = checkpoint.get("review_focus", [])
+            if review_focus:
+                print(f"     Focus:")
+                for focus_item in review_focus:
+                    print(f"       • {focus_item}")
 
-        if week.get("metrics"):
-            metrics = week["metrics"]
-            if isinstance(metrics, list):
-                print(f"\n  Success Metrics: {', '.join(metrics)}")
-            else:
-                print(f"\n  Success Metrics: {metrics}")
+    # Print statistical requirements
+    stats = execution_plan.get("statistical_requirements", {})
+    if stats:
+        print(f"\n📊 STATISTICAL REQUIREMENTS:")
+        print(f"  Min conversions/combo: {stats.get('min_conversions_per_combo', 'N/A')}")
+        print(f"  Confidence level: {stats.get('confidence_level', 'N/A')}")
+        print(f"  Expected weekly conversions: {stats.get('expected_weekly_conversions', 'N/A')}")
+        if stats.get("power_analysis"):
+            print(f"  Power analysis: {stats['power_analysis']}")
 
-        if week.get("expected_improvement"):
-            print(f"  Expected Improvement: {week['expected_improvement']}")
+    # Print risk mitigation
+    risks = execution_plan.get("risk_mitigation", {})
+    if risks:
+        print(f"\n⚠️  RISK MITIGATION:")
 
-    print("\n" + "─" * 60)
-    print("  → After each week, upload results for optimization")
-    print()
+        early_signals = risks.get("early_warning_signals", [])
+        if early_signals:
+            print(f"  Early warning signals:")
+            for signal in early_signals:
+                print(f"    • {signal}")
 
-
-def print_accelerated_experiment_plan(experiment_plan):
-    """Print accelerated 7-day parallel experiment plan"""
-    print("\n" + "=" * 60)
-    print("  EXPERIMENT PLAN (7 DAYS - PARALLEL TESTING)")
-    print("=" * 60)
-    print("  ⚡ ACCELERATED MODE: Test everything simultaneously")
-    print("=" * 60)
-
-    day_plan = experiment_plan.get("day_1_to_7", {})
-
-    if day_plan.get("description"):
-        print(f"\n📋 {day_plan['description']}")
-
-    # Print hypotheses
-    hypotheses = day_plan.get("hypotheses", {})
-    if hypotheses:
-        print("\n🔬 HYPOTHESES:")
-        if hypotheses.get("platform"):
-            print(f"  Platform: {hypotheses['platform']}")
-        if hypotheses.get("audience"):
-            print(f"  Audience: {hypotheses['audience']}")
-        if hypotheses.get("creative"):
-            print(f"  Creative: {hypotheses['creative']}")
-        if hypotheses.get("interaction"):
-            print(f"  Interaction: {hypotheses['interaction']}")
-
-    # Print test matrix
-    test_matrix = day_plan.get("test_matrix", {})
-    combinations = test_matrix.get("combinations", [])
-
-    if combinations:
-        print(f"\n📊 TEST MATRIX ({len(combinations)} combinations running in parallel):")
-        print("─" * 60)
-
-        for i, combo in enumerate(combinations, 1):
-            budget = combo.get("budget_allocation", "?")
-            print(f"\n  [{i}] {combo.get('label', 'Unnamed Combo')} ({budget})")
-            print(f"      Platform:  {combo.get('platform', 'N/A')}")
-            print(f"      Audience:  {combo.get('audience', 'N/A')}")
-            print(f"      Creative:  {combo.get('creative', 'N/A')}")
-            if combo.get("rationale"):
-                rationale = combo["rationale"]
-                # Wrap long rationale
-                if len(rationale) > 70:
-                    rationale = rationale[:67] + "..."
-                print(f"      Why:       {rationale}")
-
-    # Print decision criteria
-    criteria = day_plan.get("decision_criteria", {})
-    if criteria:
-        print("\n📏 DECISION CRITERIA:")
-        print(f"  Min conversions per combo: {criteria.get('min_conversions_per_combo', 'N/A')}")
-        print(f"  Confidence level: {criteria.get('confidence_level', 'N/A')}")
-        print(f"  Primary metric: {criteria.get('primary_metric', 'N/A')}")
-        if criteria.get("secondary_metrics"):
-            metrics = criteria["secondary_metrics"]
-            if isinstance(metrics, list):
-                print(f"  Secondary metrics: {', '.join(metrics)}")
-
-    # Print evaluation schedule
-    schedule = day_plan.get("evaluation_schedule", {})
-    if schedule:
-        print("\n📅 EVALUATION SCHEDULE:")
-        if schedule.get("day_3"):
-            print(f"  Day 3: {schedule['day_3']}")
-        if schedule.get("day_7"):
-            print(f"  Day 7: {schedule['day_7']}")
-
-    # Print memory-based optimizations
-    optimizations = experiment_plan.get("memory_based_optimizations", {})
-    if optimizations:
-        print("\n🧠 MEMORY-BASED OPTIMIZATIONS:")
-
-        skipped = optimizations.get("skipped_tests", [])
-        if skipped:
-            print("  Skipped (based on historical data):")
-            for item in skipped:
-                print(f"    ✗ {item}")
-
-        confident = optimizations.get("confident_decisions", [])
-        if confident:
-            print("  Confident decisions:")
-            for item in confident:
-                print(f"    ✓ {item}")
-
-        hedges = optimizations.get("hedge_tests", [])
-        if hedges:
-            print("  Hedge tests:")
-            for item in hedges:
-                print(f"    ⚠ {item}")
-
-    # Print expected outcome
-    if day_plan.get("expected_outcome"):
-        print(f"\n🎯 EXPECTED OUTCOME:")
-        print(f"  {day_plan['expected_outcome']}")
-
-    # Print statistical power
-    if day_plan.get("statistical_power"):
-        print(f"\n📊 STATISTICAL POWER:")
-        print(f"  {day_plan['statistical_power']}")
+        contingencies = risks.get("contingency_plans", [])
+        if contingencies:
+            print(f"  Contingency plans:")
+            for plan in contingencies:
+                print(f"    → {plan}")
 
     print("\n" + "─" * 60)
-    print("  → Upload results on Day 3 for checkpoint, Day 7 for final decision")
-    print("  ⚡ TIME SAVED: 14 days vs traditional sequential testing")
+    print(f"  ⏱️  Total Duration: {total_days} days (max 30 days)")
+    print(f"  📈 Adaptive approach based on historical performance")
     print()
 
 
