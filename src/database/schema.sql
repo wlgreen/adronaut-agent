@@ -25,6 +25,7 @@ CREATE TABLE projects (
     historical_data JSONB DEFAULT '{}',
     market_data JSONB DEFAULT '{}',
     user_inputs JSONB DEFAULT '{}',
+    knowledge_facts JSONB DEFAULT '{}',  -- Discovery system: facts with confidence scores and sources
 
     -- Strategy & experiments
     current_strategy JSONB DEFAULT '{}',

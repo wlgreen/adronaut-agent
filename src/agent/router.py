@@ -153,14 +153,14 @@ def get_next_node(state: AgentState) -> str:
     decision = state.get("decision")
 
     if decision == "initialize":
-        # Go through user_input to collect context and do initial web search
-        return "user_input"
+        # Go through discovery to collect context with intelligent strategies
+        return "discovery"
     elif decision == "reflect":
         # Go directly to reflection for performance analysis
         return "reflection"
     elif decision == "enrich":
-        # Go through user_input to collect additional context and do competitive search
-        return "user_input"
+        # Go through discovery to collect additional context using parallel search
+        return "discovery"
     elif decision == "continue":
         # Continue based on current phase
         phase = state.get("current_phase")
@@ -174,7 +174,7 @@ def get_next_node(state: AgentState) -> str:
         elif phase == "optimizing":
             return "adjustment"
         else:
-            return "user_input"
+            return "discovery"
     else:
-        # Default to user_input for safety
-        return "user_input"
+        # Default to discovery for safety
+        return "discovery"

@@ -218,6 +218,31 @@ def print_results(final_state):
         for msg in final_state["messages"][-5:]:  # Last 5 messages
             print(f"  • {msg}")
 
+    # Knowledge Graph Visualization
+    if final_state.get("knowledge_facts"):
+        print("\n--- Knowledge Graph ---")
+        kg = final_state["knowledge_facts"]
+        if kg:
+            print(f"Total facts: {len(kg)}")
+            print()
+            for key, fact in kg.items():
+                # Create confidence bar (0-10 blocks)
+                conf = fact.get("confidence", 0)
+                conf_bar = "█" * int(conf * 10)
+                conf_bar = f"{conf_bar:10}"  # Pad to 10 chars
+
+                # Format value
+                value = str(fact.get("value", "N/A"))
+                if len(value) > 35:
+                    value = value[:32] + "..."
+
+                # Format source
+                source = fact.get("source", "unknown")
+
+                print(f"  {key[:28]:28} {value:35} [{conf_bar}] {conf:.2f} ({source})")
+        else:
+            print("  (No facts discovered)")
+
     # Errors
     if final_state.get("errors"):
         print("\n--- Errors ---")

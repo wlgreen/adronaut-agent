@@ -35,6 +35,7 @@ class AgentState(TypedDict):
     historical_data: Dict[str, Any]
     market_data: Dict[str, Any]
     user_inputs: Dict[str, Any]
+    knowledge_facts: Dict[str, Dict[str, Any]]  # fact_key → {value, confidence, source}
 
     # ===== Strategy & Experiments =====
     current_strategy: Dict[str, Any]
@@ -103,6 +104,7 @@ def create_initial_state(
         historical_data={},
         market_data={},
         user_inputs={},
+        knowledge_facts={},
 
         # Strategy & experiments
         current_strategy={},
@@ -152,6 +154,7 @@ def load_project_into_state(
     state["historical_data"] = project_data.get("historical_data", {})
     state["market_data"] = project_data.get("market_data", {})
     state["user_inputs"] = project_data.get("user_inputs", {})
+    state["knowledge_facts"] = project_data.get("knowledge_facts", {})
 
     # Load strategy & experiments
     state["current_strategy"] = project_data.get("current_strategy", {})
@@ -173,17 +176,18 @@ def load_project_into_state(
     return state
 
 
-def state_to_project_dict(state: AgentState) -> Dict[str, Any]:
+def state_to_project_dict(state: AgentState, include_knowledge_facts: bool = True) -> Dict[str, Any]:
     """
     Convert state to project dictionary for database storage
 
     Args:
         state: Current agent state
+        include_knowledge_facts: Whether to include knowledge_facts (set False if DB not updated yet)
 
     Returns:
         Dictionary ready for database storage
     """
-    return {
+    project_dict = {
         "project_id": state["project_id"],
         "current_phase": state["current_phase"],
         "iteration": state["iteration"],
@@ -205,3 +209,9 @@ def state_to_project_dict(state: AgentState) -> Dict[str, Any]:
         "best_performers": state["best_performers"],
         "threshold_status": state["threshold_status"],
     }
+
+    # Only include knowledge_facts if requested (handles schema migration)
+    if include_knowledge_facts:
+        project_dict["knowledge_facts"] = state["knowledge_facts"]
+
+    return project_dict

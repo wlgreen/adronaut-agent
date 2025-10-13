@@ -149,9 +149,334 @@ def analyze_files_node(state: AgentState) -> AgentState:
     return state
 
 
+def infer_facts_from_data(state: AgentState) -> Dict[str, Dict[str, Any]]:
+    """
+    Use LLM to infer facts from historical campaign data in file_analyses
+
+    Args:
+        state: Current agent state with file_analyses
+
+    Returns:
+        Dictionary of inferred facts with confidence scores
+    """
+    from ..llm.gemini import get_gemini
+    import json
+
+    facts = {}
+
+    # Get data from file_analyses (populated by analyze_files_node)
+    file_analyses = state.get("file_analyses", [])
+
+    # Collect all historical campaign data
+    all_data = []
+    for analysis in file_analyses:
+        if analysis.get("type") == "historical" and analysis.get("data"):
+            all_data.extend(analysis["data"])
+
+    if not all_data or len(all_data) == 0:
+        state.get("messages", []).append("⚠ No historical data available for LLM inference")
+        return facts
+
+    state.get("messages", []).append(f"🔍 Analyzing {len(all_data)} campaign records for inference...")
+
+    try:
+        gemini = get_gemini()
+
+        # Sample first 5 campaigns for inference
+        sample = all_data[:5]
+
+        inference_prompt = f"""
+Analyze these campaign data samples and infer:
+1. Product type/category
+2. Target audience hints
+3. Likely business goals
+
+Data: {json.dumps(sample, indent=2)}
+
+Respond with JSON:
+{{
+  "product_type": "description",
+  "audience_hint": "description",
+  "business_goals": "description"
+}}
+"""
+
+        result = gemini.generate_json(
+            prompt=inference_prompt,
+            temperature=0.3,
+            task_name="Data Inference"
+        )
+
+        if result.get("product_type"):
+            facts["product_category"] = {
+                "value": result["product_type"],
+                "confidence": 0.7,
+                "source": "llm_inference"
+            }
+
+        if result.get("audience_hint"):
+            facts["audience_hint"] = {
+                "value": result["audience_hint"],
+                "confidence": 0.6,
+                "source": "llm_inference"
+            }
+
+        if result.get("business_goals"):
+            facts["business_goals"] = {
+                "value": result["business_goals"],
+                "confidence": 0.5,
+                "source": "llm_inference"
+            }
+
+    except Exception as e:
+        state.get("messages", []).append(f"⚠ LLM inference error: {str(e)}")
+
+    return facts
+
+
+def parallel_web_search(state: AgentState) -> Dict[str, Dict[str, Any]]:
+    """
+    Execute multiple Tavily searches concurrently
+
+    Args:
+        state: Current agent state
+
+    Returns:
+        Dictionary of web search results with confidence scores
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    facts = {}
+    tavily_key = os.getenv("TAVILY_API_KEY")
+
+    if not tavily_key:
+        return facts
+
+    # Get product description from knowledge_facts or user_inputs
+    product = state.get("knowledge_facts", {}).get("product_description", {}).get("value")
+    if not product:
+        product = state.get("user_inputs", {}).get("product_description", "")
+
+    if not product:
+        return facts
+
+    try:
+        from tavily import TavilyClient
+        tavily = TavilyClient(api_key=tavily_key)
+
+        # Define search queries
+        searches = {
+            "competitors": f"{product} competitors advertising strategies",
+            "benchmarks": f"{product} advertising CPA ROAS benchmarks industry standards"
+        }
+
+        # Execute searches in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_to_key = {
+                executor.submit(tavily.search, query, max_results=3): key
+                for key, query in searches.items()
+            }
+
+            for future in as_completed(future_to_key):
+                key = future_to_key[future]
+                try:
+                    result = future.result()
+                    facts[f"market_{key}"] = {
+                        "value": result.get("results", []),
+                        "confidence": 0.8,
+                        "source": "web_search"
+                    }
+                except Exception as e:
+                    state.get("messages", []).append(f"Web search for {key} failed: {str(e)}")
+
+    except Exception as e:
+        state.get("messages", []).append(f"Parallel web search skipped: {str(e)}")
+
+    return facts
+
+
+def ask_user_batch(missing_keys: list, state: AgentState) -> Dict[str, Dict[str, Any]]:
+    """
+    Ask user multiple questions at once in batch
+
+    Args:
+        missing_keys: List of fact keys that need user input
+        state: Current agent state
+
+    Returns:
+        Dictionary of user-provided facts with confidence 1.0
+    """
+    # Friendly question mappings
+    QUESTION_MAP = {
+        "product_description": "Product/service description: ",
+        "target_cpa": "Target CPA (cost per acquisition) in USD: ",
+        "target_roas": "Target ROAS (return on ad spend): ",
+        "target_budget": "Daily budget in USD: ",
+        "target_audience": "Target audience description: ",
+    }
+
+    facts = {}
+
+    if not missing_keys:
+        return facts
+
+    print("\n" + "="*60)
+    print("  Required Information")
+    print("="*60)
+    print("(Press Enter to skip any question)\n")
+
+    for key in missing_keys:
+        prompt = QUESTION_MAP.get(key, f"{key.replace('_', ' ').title()}: ")
+        response = input(prompt).strip()
+
+        if response:
+            # Try to convert numeric values
+            value = response
+            try:
+                if "cpa" in key.lower() or "roas" in key.lower() or "budget" in key.lower():
+                    value = float(response)
+            except ValueError:
+                pass
+
+            facts[key] = {
+                "value": value,
+                "confidence": 1.0,
+                "source": "user"
+            }
+
+    print()
+    return facts
+
+
+@track_node
+def discovery_node(state: AgentState) -> AgentState:
+    """
+    Intelligent discovery using parallel strategies with detailed progress logging
+
+    Minimizes user questions by inferring from data and searching web first.
+    Only asks user for critical unknowns with low confidence.
+
+    Args:
+        state: Current agent state
+
+    Returns:
+        Updated state with knowledge_facts populated
+    """
+    interactive_mode = os.getenv("INTERACTIVE_MODE", "true").lower() == "true"
+    knowledge = state.get("knowledge_facts", {}).copy()
+
+    # Header
+    state["messages"].append("="*60)
+    state["messages"].append("DISCOVERY PROCESS")
+    state["messages"].append("="*60)
+
+    # Strategy 1: LLM Inference from historical data
+    state["messages"].append("\n[Strategy 1/3] LLM Inference from Historical Data")
+    inferred = infer_facts_from_data(state)
+
+    if inferred:
+        knowledge.update(inferred)
+        avg_conf = sum(f['confidence'] for f in inferred.values())/len(inferred)
+        state["messages"].append(f"  ✓ Inferred {len(inferred)} facts (avg confidence: {avg_conf:.2f})")
+        for key, fact in inferred.items():
+            value_preview = str(fact['value'])[:50] + "..." if len(str(fact['value'])) > 50 else str(fact['value'])
+            state["messages"].append(f"    - {key}: {value_preview} (conf: {fact['confidence']:.2f})")
+    else:
+        state["messages"].append("  ⊘ No facts inferred")
+
+    # Strategy 2: Parallel Web Search
+    state["messages"].append("\n[Strategy 2/3] Parallel Web Search")
+    web_facts = parallel_web_search(state)
+
+    if web_facts:
+        knowledge.update(web_facts)
+        state["messages"].append(f"  ✓ Found {len(web_facts)} facts from web")
+        for key in web_facts.keys():
+            state["messages"].append(f"    - {key}")
+    else:
+        # Check why web search didn't run
+        product = knowledge.get("product_description", {}).get("value") or state.get("user_inputs", {}).get("product_description")
+        if not product:
+            state["messages"].append("  ⊘ Web search skipped (no product description yet)")
+        else:
+            state["messages"].append("  ⊘ Web search skipped (no Tavily API key)")
+
+    # Strategy 3: User Questions (only for critical missing facts)
+    state["messages"].append("\n[Strategy 3/3] User Input for Critical Facts")
+    critical_facts = ["product_description", "target_budget"]
+
+    missing = []
+    for key in critical_facts:
+        existing_conf = knowledge.get(key, {}).get("confidence", 0)
+        if key not in knowledge or existing_conf < 0.6:
+            missing.append(key)
+            state["messages"].append(f"  ? {key} needed (current confidence: {existing_conf:.2f}, threshold: 0.60)")
+
+    if not missing:
+        state["messages"].append("  ✓ All critical facts already known")
+    elif not interactive_mode:
+        state["messages"].append("  ⊘ Interactive mode disabled, skipping user questions")
+    else:
+        user_facts = ask_user_batch(missing, state)
+        knowledge.update(user_facts)
+        if user_facts:
+            state["messages"].append(f"  ✓ User provided {len(user_facts)} facts")
+            for key in user_facts.keys():
+                state["messages"].append(f"    - {key}")
+        else:
+            state["messages"].append("  ⊘ User skipped all questions")
+
+    # Final Summary
+    state["messages"].append("\n" + "="*60)
+    state["messages"].append("DISCOVERY SUMMARY")
+    state["messages"].append("="*60)
+
+    if knowledge:
+        sources = {}
+        for fact in knowledge.values():
+            source = fact["source"]
+            sources[source] = sources.get(source, 0) + 1
+
+        state["messages"].append(f"Total facts discovered: {len(knowledge)}")
+        state["messages"].append(f"By source: {dict(sources)}")
+
+        state["messages"].append("\nKnowledge Graph:")
+        for key, fact in knowledge.items():
+            value_str = str(fact['value'])[:40] + "..." if len(str(fact['value'])) > 40 else str(fact['value'])
+            state["messages"].append(
+                f"  {key:25} {value_str:42} "
+                f"[conf: {fact['confidence']:.2f}, src: {fact['source']}]"
+            )
+    else:
+        state["messages"].append("⚠ WARNING: No facts discovered!")
+        state["messages"].append("  Possible reasons:")
+        state["messages"].append("  - No historical data in uploaded files")
+        state["messages"].append("  - User skipped all questions")
+        state["messages"].append("  - Web search disabled (no Tavily API key)")
+
+    state["messages"].append("="*60)
+
+    # Update state
+    state["knowledge_facts"] = knowledge
+
+    # Extract values for backward compatibility with existing code
+    user_inputs = {}
+    for key, fact in knowledge.items():
+        if key in ["product_description", "target_cpa", "target_roas", "target_budget", "target_audience"]:
+            user_inputs[key] = fact["value"]
+
+    state["user_inputs"] = user_inputs
+
+    state["cycle_num"] += 1
+    return state
+
+
 @track_node
 def user_input_node(state: AgentState) -> AgentState:
     """
+    DEPRECATED: Use discovery_node instead
+    This node is kept for backward compatibility but redirects to discovery_node
+
     Collect additional user inputs and perform targeted web search
 
     Args:
@@ -160,6 +485,10 @@ def user_input_node(state: AgentState) -> AgentState:
     Returns:
         Updated state with user inputs and search results
     """
+    # Redirect to discovery_node
+    return discovery_node(state)
+
+    # Old implementation below (never reached)
     # Check if we're in CLI mode (interactive) or programmatic mode
     # For now, we'll make interactive prompts optional
     interactive_mode = os.getenv("INTERACTIVE_MODE", "true").lower() == "true"
@@ -630,7 +959,7 @@ def adjustment_node(state: AgentState) -> AgentState:
 @track_node
 def save_state_node(state: AgentState) -> AgentState:
     """
-    Save current state to database
+    Save current state to database with fallback for schema migration
 
     Args:
         state: Current agent state
@@ -639,10 +968,8 @@ def save_state_node(state: AgentState) -> AgentState:
         Updated state
     """
     try:
-        # Convert state to project dict
-        project_data = state_to_project_dict(state)
-
-        # Save to database
+        # Try to save with knowledge_facts
+        project_data = state_to_project_dict(state, include_knowledge_facts=True)
         ProjectPersistence.save_project(project_data)
 
         # Complete session
@@ -655,7 +982,31 @@ def save_state_node(state: AgentState) -> AgentState:
         state["messages"].append("State saved to database")
 
     except Exception as e:
-        state["errors"].append(f"Save error: {str(e)}")
+        error_str = str(e)
+
+        # Check if it's the schema cache error for knowledge_facts
+        if "knowledge_facts" in error_str and ("PGRST204" in error_str or "schema cache" in error_str):
+            # Retry without knowledge_facts
+            state["messages"].append("⚠ Database schema not updated yet - saving without knowledge_facts")
+            state["messages"].append("💡 Run migration: migrations/add_knowledge_facts_column.sql")
+
+            try:
+                project_data = state_to_project_dict(state, include_knowledge_facts=False)
+                ProjectPersistence.save_project(project_data)
+
+                # Complete session
+                if state.get("session_id"):
+                    SessionPersistence.complete_session(
+                        session_id=state["session_id"],
+                        status="completed"
+                    )
+
+                state["messages"].append("State saved (without knowledge_facts)")
+            except Exception as retry_error:
+                state["errors"].append(f"Save error (retry failed): {str(retry_error)}")
+        else:
+            # Different error, report it
+            state["errors"].append(f"Save error: {error_str}")
 
     state["cycle_num"] += 1
 

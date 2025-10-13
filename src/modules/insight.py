@@ -154,6 +154,18 @@ def generate_insights_and_strategy(
     # Prepare data summaries
     product_info = state.get("user_inputs", {}).get("product_description", "Not provided")
 
+    # Format knowledge facts with confidence scores
+    knowledge_facts = state.get("knowledge_facts", {})
+    if knowledge_facts:
+        knowledge_summary = "DISCOVERED FACTS (with confidence scores):\n"
+        for key, fact in knowledge_facts.items():
+            value = fact.get("value", "N/A")
+            confidence = fact.get("confidence", 0.0)
+            source = fact.get("source", "unknown")
+            knowledge_summary += f"- {key}: {value} (confidence: {confidence:.1f}, source: {source})\n"
+    else:
+        knowledge_summary = "No knowledge facts discovered yet"
+
     # Get detailed historical data analysis from TEMPORARY data
     # This data is NOT stored in state, only used for insight generation
     temp_historical_data = state.get("node_outputs", {}).get("temp_historical_data", [])
@@ -184,7 +196,7 @@ def generate_insights_and_strategy(
     # Include cached insights if available
     previous_insights = cached_insights if cached_insights else "No previous insights available"
 
-    # Build prompt
+    # Build prompt with knowledge facts
     prompt = INSIGHT_PROMPT_TEMPLATE.format(
         product_info=product_info,
         historical_data=hist_summary,
@@ -192,6 +204,9 @@ def generate_insights_and_strategy(
         user_inputs=user_inputs_summary if user_inputs_summary else "None provided",
         previous_insights=previous_insights
     )
+
+    # Prepend knowledge summary to prompt
+    prompt = knowledge_summary + "\n" + prompt
 
     # Generate strategy
     strategy = gemini.generate_json(

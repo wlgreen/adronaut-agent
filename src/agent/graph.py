@@ -8,6 +8,7 @@ from .nodes import (
     load_context_node,
     analyze_files_node,
     user_input_node,
+    discovery_node,
     data_collection_node,
     insight_node,
     campaign_setup_node,
@@ -32,7 +33,8 @@ def create_campaign_agent_graph():
     workflow.add_node("load_context", load_context_node)
     workflow.add_node("analyze_files", analyze_files_node)
     workflow.add_node("router", router_node)
-    workflow.add_node("user_input", user_input_node)
+    workflow.add_node("discovery", discovery_node)  # New intelligent discovery node
+    workflow.add_node("user_input", user_input_node)  # Kept for backward compatibility
     workflow.add_node("data_collection", data_collection_node)
     workflow.add_node("insight", insight_node)
     workflow.add_node("campaign_setup", campaign_setup_node)
@@ -52,7 +54,8 @@ def create_campaign_agent_graph():
         "router",
         get_next_node,
         {
-            "user_input": "user_input",
+            "discovery": "discovery",  # New intelligent discovery route
+            "user_input": "user_input",  # Backward compatibility
             "data_collection": "data_collection",
             "insight": "insight",
             "campaign_setup": "campaign_setup",
@@ -62,7 +65,10 @@ def create_campaign_agent_graph():
         },
     )
 
-    # User input flows to data collection
+    # Discovery flows to data collection
+    workflow.add_edge("discovery", "data_collection")
+
+    # User input flows to data collection (backward compatibility)
     workflow.add_edge("user_input", "data_collection")
 
     # Initialize flow edges
