@@ -168,47 +168,250 @@ adronaut-agent/
 │   │   ├── router.py   # Intelligent routing
 │   │   └── state.py    # State definitions
 │   ├── modules/        # Business logic
-│   │   ├── campaign.py    # Config generation
-│   │   ├── data_loader.py # File parsing
-│   │   ├── insight.py     # Strategy builder
-│   │   └── reflection.py  # Performance analysis
+│   │   ├── campaign.py         # Config generation
+│   │   ├── data_loader.py      # File parsing
+│   │   ├── insight.py          # Strategy builder
+│   │   ├── reflection.py       # Performance analysis
+│   │   └── execution_planner.py # Timeline generation
 │   ├── database/       # Persistence layer
-│   │   ├── client.py      # Supabase client
-│   │   ├── persistence.py # CRUD operations
-│   │   └── schema.sql     # Database schema
-│   └── llm/            # LLM integration
-│       └── gemini.py      # Gemini wrapper
+│   │   ├── client.py           # Supabase client
+│   │   ├── persistence.py      # CRUD operations
+│   │   └── schema.sql          # Database schema
+│   ├── storage/        # File management
+│   │   └── file_manager.py     # Supabase storage I/O
+│   ├── llm/            # LLM integration
+│   │   └── gemini.py           # Gemini wrapper
+│   └── utils/          # Utilities
+│       └── progress.py         # Progress tracking
+├── examples/           # Sample data & outputs
+│   ├── sample_historical_data.csv
+│   ├── sample_experiment_results.csv
+│   └── sample_outputs/
 ├── cli.py              # CLI interface
 ├── requirements.txt
+├── ARCHITECTURE.md     # Technical documentation
+├── CONTRIBUTING.md     # Contribution guidelines
 └── .env
 ```
 
-## Key Concepts
+## Example Outputs
 
-### Agent Flow
+### Session Output
+
+When you run the agent, you'll see detailed progress and results:
 
 ```
+============================================================
+  Session Results
+============================================================
+
+Project ID: eco-bottle-campaign-001
+Session: 1
+Decision: initialize
+Phase: awaiting_results
+Iteration: 0
+
+--- Messages ---
+  • New project: eco-bottle-campaign-001
+  • Analyzed historical_q3.csv: historical, 45 rows
+  • Router decision: initialize
+  • Discovered 5 facts via LLM inference
+  • Generated strategy with 8 insights
+  • Created execution timeline: 14 days
+  • Configuration generated successfully
+
+--- Knowledge Graph ---
+Total facts: 5
+
+  product_description         Eco-friendly water bottles...  [████████  ] 0.85 (llm_inference)
+  target_budget               1000.0                         [██████████] 0.95 (user_input)
+  target_cpa                  25.0                           [████████  ] 0.80 (llm_inference)
+  target_roas                 3.0                            [██████    ] 0.70 (llm_inference)
+  market_segment              Health & Wellness              [█████████ ] 0.90 (llm_inference)
+
+--- Campaign Configuration ---
+  Total Daily Budget: $1000
+  Experiment: Short-term Discovery (Days 1-5)
+
+  TikTok:
+    Budget: $600
+    Objective: CONVERSIONS
+
+  Meta:
+    Budget: $400
+    Objective: CONVERSIONS
+
+✓ Configuration saved to: campaign_eco-bottle-campaign-001_v0.json
+```
+
+### Strategy Output
+
+```json
+{
+  "insights": {
+    "patterns": [
+      "TikTok campaigns achieved 23% lower CPA ($18 vs $23) compared to Meta",
+      "Female audience (25-34) showed 40% higher engagement rate",
+      "UGC video content drove 3.2x ROAS vs static images (2.1x)"
+    ],
+    "strengths": [
+      "Strong brand awareness in wellness community",
+      "Proven conversion funnel with 8.5% checkout rate"
+    ],
+    "weaknesses": [
+      "Meta platform underperforming on CPA targets",
+      "Limited creative variety tested (only 3 formats)"
+    ]
+  },
+  "target_audience": {
+    "primary_segments": ["Health-conscious millennials", "Eco-warriors", "Fitness enthusiasts"],
+    "demographics": {
+      "age": "25-34",
+      "gender": "Female-primary, All-secondary",
+      "location": "United States (Urban areas)"
+    },
+    "interests": ["Sustainability", "Fitness", "Wellness", "Yoga", "Nutrition"]
+  },
+  "platform_strategy": {
+    "priorities": ["TikTok", "Meta"],
+    "budget_split": {"TikTok": 0.6, "Meta": 0.4},
+    "rationale": "TikTok demonstrated 23% lower CPA and higher engagement with target demo"
+  }
+}
+```
+
+### Execution Timeline Output
+
+```
+============================================================
+  EXECUTION TIMELINE (14 DAYS)
+============================================================
+
+💡 Timeline Design:
+  14-day timeline chosen to allow 2 optimization cycles with
+  sufficient statistical power. Budget supports 20+ conversions
+  per combination for 90% confidence.
+
+📅 TESTING PHASES (3 phases):
+────────────────────────────────────────────────────────────
+
+[1] SHORT-TERM DISCOVERY
+    Days 1-5 (5 days) | Budget: 35%
+    Objectives:
+      • Identify winning platform
+      • Test 3 audience segments
+      • Validate UGC vs static creative
+    Test Combinations (3):
+      [15%] TikTok + Interest + UGC Video
+           → Historical winner, testing scalability
+      [12%] Meta + Lookalike + Static Image
+           → Hedge bet for audience discovery
+      [8%] TikTok + Lookalike + UGC Video
+           → Testing interaction effect
+    Success Criteria:
+      ✓ CPA < $30 in at least 1 combination
+      ✓ ROAS > 2.5x overall
+    Decision Triggers:
+      → Proceed if: CPA < $30 in 2+ combos
+      ⚠ Pause if: CPA > $50 across all
+
+[2] MEDIUM-TERM VALIDATION
+    Days 6-11 (6 days) | Budget: 40%
+    ...
+
+📍 CHECKPOINT SCHEDULE (3 checkpoints):
+────────────────────────────────────────────────────────────
+
+  🟡 Day 3: Early Signal Check
+     Focus:
+       • Check for obvious losers
+       • Validate tracking setup
+       • Confirm conversion volume
+
+  🔴 Day 7: Phase 1 Decision Point
+     Focus:
+       • Identify winning combinations
+       • Calculate statistical significance
+       • Decide on phase 2 allocation
+
+────────────────────────────────────────────────────────────
+  ⏱️  Total Duration: 14 days (max 30 days)
+  📈 Adaptive approach based on historical performance
+```
+
+For more example outputs, see the [`examples/`](examples/) directory.
+
+---
+
+## Key Concepts
+
+### Agent Flow - Detailed
+
+**Initialize Path** (New project with historical data):
+```
 ┌─────────────┐
-│ Load Context│ (Check if project exists)
+│Load Context │  Check if project exists in DB
 └──────┬──────┘
        ↓
 ┌─────────────┐
-│Analyze Files│ (Detect file types)
+│Analyze Files│  Detect file type: historical/experiments/enrichment
 └──────┬──────┘
        ↓
 ┌─────────────┐
-│   Router    │ (LLM decides next action)
+│   Router    │  LLM decides: "initialize" (new project + historical data)
 └──────┬──────┘
        ↓
-   ┌───┴───┐
-   │       │
-Initialize Reflect
-   │       │
-   └───┬───┘
+┌─────────────┐
+│  Discovery  │  Intelligent discovery: LLM inference + web search + user prompts
+└──────┬──────┘
        ↓
 ┌─────────────┐
-│ Save State  │
-└─────────────┘
+│Data Collect │  Merge files → historical_data, get detailed analysis
+└──────┬──────┘
+       ↓
+┌─────────────┐
+│   Insight   │  Generate strategy (insights, audience, creative, platform)
+└──────┬──────┘  + execution timeline (7-30 days, adaptive)
+       ↓
+┌─────────────┐
+│Campaign     │  Generate TikTok + Meta configs with targeting & creative
+│Setup        │
+└──────┬──────┘
+       ↓
+┌─────────────┐
+│ Save State  │  Persist to Supabase (projects table)
+└──────┬──────┘
+       ↓
+      END
+```
+
+**Reflect Path** (Existing project with experiment results):
+```
+┌─────────────┐
+│Load Context │  Restore project state from DB
+└──────┬──────┘
+       ↓
+┌─────────────┐
+│Analyze Files│  Detect file type: experiment_results
+└──────┬──────┘
+       ↓
+┌─────────────┐
+│   Router    │  LLM decides: "reflect" (experiment results uploaded)
+└──────┬──────┘
+       ↓
+┌─────────────┐
+│ Reflection  │  Analyze performance vs thresholds
+└──────┬──────┘  Identify top performers & underperformers
+       ↓
+┌─────────────┐
+│ Adjustment  │  Generate optimization patch
+└──────┬──────┘  Create new config (v1, v2, v3, ...)
+       ↓
+┌─────────────┐
+│ Save State  │  Persist updated state + new config
+└──────┬──────┘
+       ↓
+      END
 ```
 
 ### State Persistence
@@ -282,10 +485,101 @@ ORDER BY timestamp DESC;
 
 **File parsing errors**: Ensure CSV/JSON files have required columns (see File Formats section)
 
+---
+
+## For Collaborators
+
+### Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Comprehensive technical documentation covering:
+  - System design principles
+  - LangGraph agent architecture (detailed node descriptions)
+  - State management patterns
+  - Router decision logic
+  - Module breakdown (insight.py, campaign.py, reflection.py, etc.)
+  - LLM integration guidelines
+  - Database schema
+  - Development patterns & best practices
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Collaboration guidelines:
+  - Development setup
+  - Code organization
+  - Adding new nodes
+  - Testing guidelines
+  - Pull request process
+
+- **[examples/](examples/)** - Sample data and outputs:
+  - Sample CSV files (historical data, experiment results)
+  - Sample JSON outputs (strategy, timeline, configs)
+  - Annotated examples with explanations
+
+### Quick Start for Developers
+
+1. **Clone and setup**:
+```bash
+git clone <repo-url>
+cd adronaut-agent
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+2. **Read the docs**:
+- Start with this README for overview
+- Read [ARCHITECTURE.md](ARCHITECTURE.md) for technical deep dive
+- Check [examples/](examples/) for sample data
+
+3. **Run with sample data**:
+```bash
+python cli.py run --project-id test-campaign
+# Upload: examples/sample_historical_data.csv
+```
+
+4. **Explore the codebase**:
+- `src/agent/graph.py` - Workflow definition
+- `src/agent/nodes.py` - Node implementations
+- `src/modules/` - Business logic modules
+- `cli.py` - Entry point and output formatting
+
+### Key Features for Contributors
+
+- **Flexible execution timelines**: See `src/modules/execution_planner.py` - LLM-powered adaptive 7-30 day test plans
+- **Intelligent discovery**: See `src/agent/nodes.py:discovery_node` - Parallel strategies (LLM + web search + user prompts)
+- **Knowledge graph**: See `src/agent/state.py:knowledge_facts` - Confidence-scored facts with provenance
+- **Multi-session state**: See `src/database/persistence.py` - Full state restoration across sessions
+- **Progress tracking**: See `src/utils/progress.py` - Real-time node execution logging
+
+### Architecture Highlights
+
+```
+Router-Based Workflow:
+- LLM examines project state → decides next action
+- Supports: initialize | reflect | enrich | continue
+
+State-First Design:
+- Single AgentState dict flows through graph
+- Full visibility, resumability, debugging
+
+Separation of Concerns:
+- Nodes: Orchestration & state updates
+- Modules: Pure business logic functions
+- LLM: Centralized reasoning engine
+```
+
 ## License
 
 MIT
 
 ## Contributing
 
-Contributions welcome! Please open an issue or PR.
+We welcome contributions! To get started:
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+2. Check [GitHub Issues](https://github.com/your-repo/issues) for open tasks
+3. Fork the repo and create a feature branch
+4. Make your changes and add tests
+5. Submit a pull request with clear description
+
+For questions or discussions, open an issue or reach out to the maintainers.

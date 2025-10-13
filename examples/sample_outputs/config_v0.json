@@ -1,0 +1,156 @@
+{
+  "tiktok": {
+    "campaign_name": "Eco Bottle - Phase 1 Discovery - TikTok",
+    "objective": "CONVERSIONS",
+    "daily_budget": 350.0,
+    "targeting": {
+      "age_range": "25-44",
+      "gender": "ALL",
+      "locations": [
+        "United States"
+      ],
+      "interests": [
+        "Sustainability",
+        "Zero waste lifestyle",
+        "Fitness and wellness",
+        "Yoga",
+        "Outdoor activities",
+        "Environmental activism"
+      ],
+      "behaviors": [
+        "Online shoppers",
+        "Health & wellness enthusiasts"
+      ],
+      "language": "English"
+    },
+    "placements": [
+      "TikTok Feeds"
+    ],
+    "bidding": {
+      "strategy": "LOWEST_COST_WITH_BID_CAP",
+      "bid_amount": 28.0,
+      "target_cpa": 25.0,
+      "optimization_goal": "CONVERSIONS"
+    },
+    "creative_specs": {
+      "format": "Video",
+      "duration": "15-30 seconds",
+      "aspect_ratio": "9:16 (vertical)",
+      "messaging": [
+        "Problem/Solution: 'Tired of buying disposable bottles? Our eco-bottle lasts a lifetime'",
+        "Social proof: '50,000+ wellness enthusiasts already made the switch'",
+        "Environmental impact: 'One bottle = 1,000 plastic bottles saved'",
+        "Call to action: 'Shop Now' with limited-time offer"
+      ],
+      "content_style": "UGC (User-Generated Content) - authentic, relatable, not overly polished",
+      "hook_examples": [
+        "POV: You just discovered the water bottle that changed everything",
+        "This reusable bottle actually keeps drinks cold for 24 hours",
+        "Why I stopped buying disposable bottles (and you should too)"
+      ]
+    },
+    "optimization": {
+      "optimization_goal": "CONVERSIONS",
+      "attribution_window": "7_DAY_CLICK",
+      "pixel_event": "Purchase",
+      "learning_phase_budget": "$500 minimum for learning (included in daily budget)"
+    },
+    "schedule": {
+      "start_date": "2025-10-13",
+      "end_date": "2025-10-17",
+      "dayparting": "All day (let algorithm optimize)"
+    }
+  },
+  "meta": {
+    "campaign_name": "Eco Bottle - Phase 1 Discovery - Meta",
+    "objective": "CONVERSIONS",
+    "daily_budget": 300.0,
+    "targeting": {
+      "age_range": "25-44",
+      "gender": "ALL",
+      "locations": [
+        "United States"
+      ],
+      "detailed_targeting": {
+        "interests": [
+          "Environmentalism",
+          "Sustainable living",
+          "Fitness and wellness",
+          "Yoga",
+          "Health food",
+          "Outdoor recreation"
+        ],
+        "behaviors": [
+          "Online shoppers",
+          "Engaged shoppers"
+        ],
+        "custom_audiences": [
+          "Website visitors (180 days)",
+          "Lookalike 1% (Purchasers)"
+        ]
+      },
+      "language": "English"
+    },
+    "placements": [
+      "Facebook Feeds",
+      "Instagram Feeds",
+      "Instagram Stories",
+      "Instagram Reels"
+    ],
+    "bidding": {
+      "strategy": "LOWEST_COST_WITH_BID_CAP",
+      "bid_amount": 32.0,
+      "target_cpa": 25.0,
+      "optimization_goal": "CONVERSIONS"
+    },
+    "creative_specs": {
+      "formats": [
+        "Video (9:16 for Stories/Reels, 1:1 for Feeds)",
+        "Carousel (1:1) - backup format"
+      ],
+      "messaging": [
+        "Problem/Solution: Articulate the single-use plastic problem and position eco-bottle as the solution",
+        "Authenticity: Prioritize UGC-style video or carousel with real customer photos",
+        "Benefit-driven: Highlight 'Keeps drinks cold 24hrs', 'Lifetime durability', '1% to ocean cleanup'",
+        "Call to action: 'Shop Now' with urgency ('Limited stock')"
+      ],
+      "carousel_structure": [
+        "Slide 1: Hero shot with headline 'The Last Water Bottle You'll Ever Buy'",
+        "Slide 2: Key feature - Temperature retention visual",
+        "Slide 3: Environmental impact stat with visual",
+        "Slide 4: Customer testimonial quote",
+        "Slide 5: CTA with offer"
+      ]
+    },
+    "optimization": {
+      "optimization_goal": "CONVERSIONS",
+      "conversion_window": "7_DAY_CLICK",
+      "pixel_event": "Purchase",
+      "learning_phase_budget": "$500 minimum (included in daily budget)"
+    },
+    "schedule": {
+      "start_date": "2025-10-13",
+      "end_date": "2025-10-17",
+      "dayparting": "All day"
+    }
+  },
+  "summary": {
+    "total_daily_budget": 650.0,
+    "budget_allocation": {
+      "tiktok": 350.0,
+      "meta": 300.0
+    },
+    "budget_split_percent": {
+      "tiktok": 53.8,
+      "meta": 46.2
+    },
+    "experiment": "Phase 1 Short-term Discovery (Days 1-5): Testing TikTok Interest targeting vs Meta Lookalike audience, both with primary focus on UGC video creative. Hypothesis: TikTok will maintain historical $19-22 CPA performance, Meta Lookalike will improve upon historical broad targeting (goal: reduce from $30 to $25-27 CPA). Secondary test: Meta carousel format as creative diversification.",
+    "expected_outcomes": {
+      "total_conversions_phase1": "130-150 conversions over 5 days",
+      "blended_cpa_target": "$25",
+      "blended_roas_target": "3.5x",
+      "winner_criteria": "Platform/audience combo with CPA < $23 AND ROAS > 4.0x"
+    },
+    "next_steps": "After Day 5, upload experiment results to agent for reflection analysis. Agent will generate optimization patch and Phase 2 config based on winning combination."
+  }
+}

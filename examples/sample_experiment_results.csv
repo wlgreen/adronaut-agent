@@ -1,0 +1,16 @@
+experiment_id,combination_id,platform,audience,creative_format,spend,conversions,cpa,roas,date
+phase1_001,combo_1,TikTok,Interest,UGC Video,525,24,21.88,4.2,2025-10-05
+phase1_001,combo_2,Meta,Lookalike,Static Image,420,11,38.18,2.1,2025-10-05
+phase1_001,combo_3,TikTok,Lookalike,UGC Video,280,12,23.33,3.8,2025-10-05
+phase1_002,combo_1,TikTok,Interest,UGC Video,535,25,21.40,4.3,2025-10-06
+phase1_002,combo_2,Meta,Lookalike,Static Image,415,11,37.73,2.2,2025-10-06
+phase1_002,combo_3,TikTok,Lookalike,UGC Video,285,13,21.92,3.9,2025-10-06
+phase1_003,combo_1,TikTok,Interest,UGC Video,540,26,20.77,4.5,2025-10-07
+phase1_003,combo_2,Meta,Lookalike,Static Image,425,12,35.42,2.3,2025-10-07
+phase1_003,combo_3,TikTok,Lookalike,UGC Video,275,12,22.92,3.7,2025-10-07
+phase1_004,combo_1,TikTok,Interest,UGC Video,530,25,21.20,4.4,2025-10-08
+phase1_004,combo_2,Meta,Lookalike,Static Image,430,12,35.83,2.4,2025-10-08
+phase1_004,combo_3,TikTok,Lookalike,UGC Video,290,13,22.31,3.8,2025-10-08
+phase1_005,combo_1,TikTok,Interest,UGC Video,545,27,20.19,4.6,2025-10-09
+phase1_005,combo_2,Meta,Lookalike,Static Image,420,11,38.18,2.1,2025-10-09
+phase1_005,combo_3,TikTok,Lookalike,UGC Video,280,12,23.33,3.6,2025-10-09

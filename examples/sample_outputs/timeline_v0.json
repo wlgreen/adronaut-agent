@@ -1,0 +1,185 @@
+{
+  "timeline": {
+    "total_duration_days": 14,
+    "reasoning": "14-day timeline chosen to allow 2 optimization cycles with sufficient statistical power. Given $1000/day budget and target CPA $25, we expect ~40 conversions/day. This provides 280 total conversions across phases, ensuring 20+ conversions per combination for 90% confidence. Two phases enable rapid learning (5 days) followed by validation and scaling (9 days).",
+    "phases": [
+      {
+        "name": "Short-term Discovery",
+        "duration_days": 5,
+        "start_day": 1,
+        "end_day": 5,
+        "budget_allocation_percent": 35,
+        "objectives": [
+          "Validate TikTok as winning platform vs Meta",
+          "Test 3 audience segments (Interest, Lookalike, Broad)",
+          "Confirm UGC video creative superiority",
+          "Achieve initial statistical significance for top 2 combinations"
+        ],
+        "test_combinations": [
+          {
+            "id": "combo_1",
+            "label": "TikTok + Interest Targeting + UGC Video",
+            "platform": "TikTok",
+            "audience": "Interest targeting: Sustainability, Fitness, Wellness",
+            "creative": "UGC video - Customer testimonials",
+            "budget_percent": 15,
+            "rationale": "Historical best performer ($18-20 CPA). High confidence quick win to establish baseline and generate early conversions."
+          },
+          {
+            "id": "combo_2",
+            "label": "Meta + Lookalike 1% + Static Image",
+            "platform": "Meta",
+            "audience": "Lookalike 1% (based on purchasers)",
+            "creative": "Static carousel - Product features",
+            "budget_percent": 12,
+            "rationale": "Hedge bet for Meta optimization. Lookalike audience should improve upon historical broad targeting performance."
+          },
+          {
+            "id": "combo_3",
+            "label": "TikTok + Lookalike 1% + UGC Video",
+            "platform": "TikTok",
+            "audience": "Lookalike 1% (based on engagers)",
+            "creative": "UGC video - Lifestyle content",
+            "budget_percent": 8,
+            "rationale": "Test interaction effect: Does TikTok's strength extend to Lookalike audiences? Potential upside discovery."
+          }
+        ],
+        "success_criteria": [
+          "CPA < $25 in at least 2 combinations",
+          "ROAS > 3.0x overall",
+          "Min 15 conversions per combination for statistical validity",
+          "CTR > 2.0% on TikTok, > 1.5% on Meta"
+        ],
+        "decision_triggers": {
+          "proceed_if": "CPA < $25 in combo_1 or combo_3, with 20+ conversions",
+          "pause_if": "CPA > $40 across all combinations after Day 3",
+          "scale_if": "Any combination achieves CPA < $20 AND ROAS > 4.5x"
+        }
+      },
+      {
+        "name": "Medium-term Validation & Scaling",
+        "duration_days": 9,
+        "start_day": 6,
+        "end_day": 14,
+        "budget_allocation_percent": 65,
+        "objectives": [
+          "Scale winning combination(s) from Phase 1",
+          "Test creative variations on top performer",
+          "Optimize Meta targeting to reduce CPA gap",
+          "Achieve portfolio-level CPA target ($25) and ROAS target (3.5x)"
+        ],
+        "test_combinations": [
+          {
+            "id": "combo_winner_scaled",
+            "label": "Scaled Winner (from Phase 1)",
+            "platform": "TikTok or Meta",
+            "audience": "Best performing from Phase 1",
+            "creative": "Best performing format",
+            "budget_percent": 40,
+            "rationale": "Allocate majority budget to proven winner to maximize conversions and ROI."
+          },
+          {
+            "id": "combo_creative_variant",
+            "label": "Winner + New Creative Angle",
+            "platform": "Same as winner",
+            "audience": "Same as winner",
+            "creative": "New messaging angle (e.g., environmental impact)",
+            "budget_percent": 15,
+            "rationale": "Test creative refresh on winning combination to prevent ad fatigue and discover new angles."
+          },
+          {
+            "id": "combo_meta_optimized",
+            "label": "Meta Optimized (if Meta not winner)",
+            "platform": "Meta",
+            "audience": "Refined based on Phase 1 learnings",
+            "creative": "Best format from Phase 1",
+            "budget_percent": 10,
+            "rationale": "Give Meta a second chance with optimized targeting to reduce platform dependency risk."
+          }
+        ],
+        "success_criteria": [
+          "Portfolio CPA ≤ $25",
+          "Portfolio ROAS ≥ 3.5x",
+          "Min 50 conversions on scaled winner",
+          "Creative variant maintains CPA within 10% of original"
+        ],
+        "decision_triggers": {
+          "proceed_if": "Winner maintains CPA < $25 through Day 10",
+          "pause_if": "CPA inflates >20% from Phase 1 baseline (ad fatigue signal)",
+          "scale_if": "Day 10 performance exceeds targets → increase budget +30% for Days 11-14"
+        }
+      }
+    ],
+    "checkpoints": [
+      {
+        "day": 3,
+        "purpose": "Early Signal Check",
+        "review_focus": [
+          "Check for obvious losers (CPA > $40)",
+          "Validate tracking and conversion attribution",
+          "Confirm minimum conversion volume (5+ per combo)",
+          "Flag any delivery issues or low spend pacing"
+        ],
+        "action_required": false,
+        "notes": "Passive review. Only intervene if critical tracking issue or severe underperformance."
+      },
+      {
+        "day": 5,
+        "purpose": "Phase 1 Decision Point",
+        "review_focus": [
+          "Identify winning combination(s) - rank by CPA and ROAS",
+          "Calculate statistical significance (t-test for CPA differences)",
+          "Determine budget allocation for Phase 2 (scale winner to 40%)",
+          "Analyze creative performance within winning combo",
+          "Decide on Meta continuation (optimize vs. pause)"
+        ],
+        "action_required": true,
+        "notes": "Critical decision point. Must upload Phase 1 results to agent for reflection and Phase 2 config generation."
+      },
+      {
+        "day": 10,
+        "purpose": "Mid-Phase 2 Review",
+        "review_focus": [
+          "Validate scaled winner maintains performance (no ad fatigue)",
+          "Assess creative variant results",
+          "Check portfolio-level metrics vs. targets",
+          "Consider budget increase if exceeding targets"
+        ],
+        "action_required": false,
+        "notes": "Passive review. Opportunity to scale budget +30% for final 4 days if crushing targets."
+      },
+      {
+        "day": 14,
+        "purpose": "Final Evaluation",
+        "review_focus": [
+          "Calculate final portfolio metrics (CPA, ROAS, conversions)",
+          "Determine long-term scaling strategy",
+          "Document learnings for future campaigns",
+          "Plan next optimization cycle if needed"
+        ],
+        "action_required": true,
+        "notes": "Upload Day 14 results for final optimization patch or scale-up recommendation."
+      }
+    ]
+  },
+  "statistical_requirements": {
+    "min_conversions_per_combo": 15,
+    "confidence_level": 0.90,
+    "expected_weekly_conversions": 140,
+    "power_analysis": "With 15+ conversions per combination and 90% confidence level, we can detect a 20% CPA difference between combinations with 80% statistical power. This enables confident winner selection after Phase 1."
+  },
+  "risk_mitigation": {
+    "early_warning_signals": [
+      "CPA > $40 on any combination after Day 3 (pause and reallocate)",
+      "CTR < 1.5% overall (creative fatigue or poor targeting)",
+      "Conversion volume < 5/day (tracking issue or delivery problem)",
+      "Platform delivery <80% of budget (increase bids or expand targeting)"
+    ],
+    "contingency_plans": [
+      "If all combinations underperform (CPA > $35): Pause, analyze creatives, relaunch with refreshed assets in 48hrs",
+      "If Meta fails Phase 1 (CPA > $40): Allocate Meta budget to TikTok winner for Phase 2",
+      "If winner shows ad fatigue in Phase 2 (CPA +20%): Rotate in creative variant, reduce frequency caps",
+      "If budget exhausted early: Results still valid, extend timeline by 3 days with reduced budget"
+    ]
+  }
+}

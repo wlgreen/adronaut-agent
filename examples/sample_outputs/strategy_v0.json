@@ -1,0 +1,115 @@
+{
+  "insights": {
+    "patterns": [
+      "TikTok campaigns consistently achieved 23% lower CPA ($19.45 avg) compared to Meta ($29.85 avg) across 45 campaigns",
+      "CTR on TikTok (2.5% avg) significantly outperforms Meta (2.0% avg), indicating better audience engagement",
+      "UGC-style video content in Summer Launch and Fall Collection campaigns drove 4.2-4.6x ROAS",
+      "Q4 campaigns (Black Friday, Cyber Monday) showed highest conversion volumes but slightly elevated CPAs",
+      "Eco-focused messaging (Eco Focus, Earth Day Special) maintained strong performance with 4.1-4.5x ROAS"
+    ],
+    "strengths": [
+      "Proven TikTok expertise with 22 high-performing campaigns averaging $19.45 CPA",
+      "Strong wellness and eco-conscious brand positioning resonates with target audience",
+      "Seasonal campaign timing optimized (Q4 surge, Earth Day, Mother's Day)",
+      "Consistent CTR across campaigns indicates compelling creative execution"
+    ],
+    "weaknesses": [
+      "Meta platform consistently underperforms vs. TikTok with 30% higher CPA",
+      "Limited creative format diversity - mostly reliant on UGC video",
+      "No audience segmentation testing visible in historical data",
+      "Opportunity cost: Over-investing in Meta despite lower ROAS"
+    ],
+    "benchmark_comparison": "Industry benchmark for e-commerce sustainable products: CPA $22-28, ROAS 2.5-3.5x. TikTok campaigns exceed benchmarks (CPA $19.45, ROAS 4.2x), while Meta campaigns underperform (CPA $29.85, ROAS 2.4x)."
+  },
+  "target_audience": {
+    "primary_segments": [
+      "Health-conscious millennials (25-34)",
+      "Eco-warriors and sustainability advocates",
+      "Fitness enthusiasts and wellness community",
+      "Urban professionals prioritizing convenience"
+    ],
+    "demographics": {
+      "age": "25-34 (primary), 35-44 (secondary)",
+      "gender": "Female-leaning (65%), All genders welcome",
+      "location": "United States - Urban and suburban areas",
+      "income": "$50K-$100K household income"
+    },
+    "interests": [
+      "Sustainability and zero-waste lifestyle",
+      "Fitness and wellness",
+      "Yoga and meditation",
+      "Nutrition and healthy eating",
+      "Outdoor activities and hiking",
+      "Environmental activism"
+    ],
+    "psychographics": [
+      "Values: Environmental responsibility, health, authenticity",
+      "Lifestyle: Active, conscious consumers, early adopters",
+      "Pain points: Single-use plastic guilt, finding trustworthy eco brands"
+    ]
+  },
+  "creative_strategy": {
+    "messaging_angles": [
+      "Problem/Solution: 'Tired of buying disposable bottles? Our eco-bottle lasts a lifetime'",
+      "Social proof: '50,000+ wellness enthusiasts trust us to stay hydrated sustainably'",
+      "Environmental impact: 'One reusable bottle = 1,000 plastic bottles saved from landfills'",
+      "Lifestyle alignment: 'The perfect companion for yoga, hiking, and your daily grind'",
+      "Quality focus: 'Premium materials, leak-proof design, dishwasher safe - built to last'"
+    ],
+    "value_propositions": [
+      "Lifetime durability with money-back guarantee",
+      "100% BPA-free, food-grade stainless steel",
+      "Keeps drinks cold 24hrs / hot 12hrs",
+      "Stylish designs that match your aesthetic",
+      "1% of profits donated to ocean cleanup",
+      "Carbon-neutral shipping"
+    ],
+    "content_formats": [
+      "UGC video (proven winner): Real customers using product in daily life",
+      "Educational carousel: Environmental impact statistics",
+      "Testimonial video: Before/after switching to reusable",
+      "Lifestyle imagery: Product in aspirational settings (yoga studio, hiking trail)"
+    ],
+    "tone_and_voice": "Authentic, empowering, not preachy. Celebrate the positive (joining a movement) rather than guilt-tripping. Friendly and relatable."
+  },
+  "platform_strategy": {
+    "priorities": [
+      "TikTok (Primary)",
+      "Meta (Secondary - optimization needed)"
+    ],
+    "budget_split": {
+      "TikTok": 0.60,
+      "Meta": 0.40
+    },
+    "rationale": "TikTok has demonstrated 23% lower CPA ($19.45 vs $29.85) and 75% higher ROAS (4.2x vs 2.4x) across 22 campaigns. The platform's native UGC format aligns perfectly with our creative strength. Meta maintains 40% allocation for audience diversification and retargeting opportunities, but requires optimization testing to improve efficiency.",
+    "platform_specifics": {
+      "TikTok": {
+        "strengths": "Native UGC format, younger audience (25-34), high engagement",
+        "focus": "Scale winning combinations, test new creative angles",
+        "placements": "TikTok Feeds (primary), avoid In-Feed shopping ads initially"
+      },
+      "Meta": {
+        "challenges": "Higher CPA, lower ROAS, requires optimization",
+        "focus": "Audience refinement (Lookalike, Interest), creative testing",
+        "placements": "Instagram Feeds and Reels (leverage visual appeal)"
+      }
+    }
+  },
+  "experiment_hypotheses": [
+    {
+      "hypothesis": "TikTok + Interest targeting + UGC video will maintain sub-$22 CPA",
+      "rationale": "Historical best performer, proven format",
+      "priority": "High - quick win"
+    },
+    {
+      "hypothesis": "Meta + Lookalike audience will reduce CPA by 15-20% vs. broad targeting",
+      "rationale": "Leverage existing customer data for better targeting",
+      "priority": "High - Meta optimization critical"
+    },
+    {
+      "hypothesis": "Educational carousel format will improve Meta CTR by 20%+",
+      "rationale": "Diversify from video-only, tap into Meta's carousel strength",
+      "priority": "Medium - creative diversification"
+    }
+  ]
+}
