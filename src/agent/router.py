@@ -1,8 +1,8 @@
 """
-LLM-based router for intelligent decision making
+LLM-based router for intelligent decision making and flow resumption
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from functools import wraps
 from ..llm.gemini import get_gemini
 from .state import AgentState
@@ -79,7 +79,8 @@ Respond with JSON in this exact format:
 @track_node
 def router_node(state: AgentState) -> AgentState:
     """
-    LLM-based router node that decides next action
+    LLM-based router node that decides next action.
+    If resuming, reuses previous decision instead of making new LLM call.
 
     Args:
         state: Current agent state
@@ -87,6 +88,16 @@ def router_node(state: AgentState) -> AgentState:
     Returns:
         Updated state with routing decision
     """
+    is_resuming = state.get("is_resuming", False)
+    existing_decision = state.get("decision")
+
+    # If resuming and we already have a decision, reuse it
+    if is_resuming and existing_decision:
+        state["messages"].append(f"[RESUME] Reusing previous router decision: {existing_decision}")
+        state["cycle_num"] += 1
+        return state
+
+    # Normal flow - make new routing decision via LLM
     gemini = get_gemini()
 
     # Prepare context for LLM
@@ -140,9 +151,81 @@ def router_node(state: AgentState) -> AgentState:
     return state
 
 
+def get_resume_node(last_completed_node: str, state: AgentState) -> Optional[str]:
+    """
+    Determine next node to execute when resuming from a checkpoint.
+    Maps last completed node → next node in the workflow.
+
+    Args:
+        last_completed_node: Name of the last successfully completed node
+        state: Current agent state (for context-aware routing)
+
+    Returns:
+        Next node name, or None if flow is complete
+    """
+    # Define the standard workflow sequence
+    # Note: Some nodes are conditional based on router decision
+
+    # Linear nodes (always follow this order)
+    if last_completed_node == "load_context":
+        return "analyze_files"
+    elif last_completed_node == "analyze_files":
+        return "router"
+
+    # After router, it depends on the decision
+    elif last_completed_node == "router":
+        decision = state.get("decision")
+        if decision == "initialize" or decision == "enrich":
+            return "discovery"
+        elif decision == "reflect":
+            return "reflection"
+        elif decision == "continue":
+            # Continue based on current phase
+            phase = state.get("current_phase")
+            if phase == "data_collected":
+                return "insight"
+            elif phase == "strategy_built":
+                return "campaign_setup"
+            elif phase == "optimizing":
+                return "adjustment"
+            else:
+                return "discovery"
+        else:
+            return "discovery"
+
+    # Initialize flow: discovery → data_collection → insight → campaign_setup → save
+    elif last_completed_node == "discovery":
+        return "data_collection"
+    elif last_completed_node == "user_input":  # backward compatibility
+        return "data_collection"
+    elif last_completed_node == "data_collection":
+        return "insight"
+    elif last_completed_node == "insight":
+        return "campaign_setup"
+    elif last_completed_node == "campaign_setup":
+        return "save"
+
+    # Reflect flow: reflection → adjustment → save
+    elif last_completed_node == "reflection":
+        return "adjustment"
+    elif last_completed_node == "adjustment":
+        return "save"
+
+    # Save is the final node
+    elif last_completed_node == "save" or last_completed_node == "save_state":
+        return None  # Flow complete
+
+    # Unknown node - default to router to reassess
+    else:
+        return "router"
+
+
 def get_next_node(state: AgentState) -> str:
     """
-    Determine next node based on router decision
+    Determine next node based on router decision OR resumption state.
+
+    If resuming, bypass router decision and use last_completed_node.
+    Otherwise, use normal router decision logic.
 
     Args:
         state: Current agent state with decision
@@ -150,6 +233,22 @@ def get_next_node(state: AgentState) -> str:
     Returns:
         Next node name
     """
+    # Check if we're resuming from a checkpoint
+    is_resuming = state.get("is_resuming", False)
+    last_completed = state.get("last_completed_node")
+
+    if is_resuming and last_completed:
+        # Resume from last checkpoint
+        next_node = get_resume_node(last_completed, state)
+        if next_node:
+            state["messages"].append(f"[RESUME] Routing to: {next_node}")
+            return next_node
+        else:
+            # Flow was already complete
+            state["messages"].append("[RESUME] Flow already completed")
+            return "save"  # Ensure we end properly
+
+    # Normal routing based on router decision
     decision = state.get("decision")
 
     if decision == "initialize":

@@ -16,22 +16,78 @@ from ..utils.progress import get_progress_tracker
 
 
 def track_node(func):
-    """Decorator to track node execution progress"""
+    """
+    Decorator to track node execution progress and auto-save state after each node.
+    This enables incremental state saving and flow resumption.
+    """
     @wraps(func)
     def wrapper(state: AgentState) -> AgentState:
         tracker = get_progress_tracker()
         node_name = func.__name__.replace('_node', '')
 
+        # Mark node as currently executing
+        state["current_executing_node"] = node_name
+        state["flow_status"] = "in_progress"
+
         # Start tracking
         tracker.node_start(node_name)
 
-        # Execute node
-        result = func(state)
+        try:
+            # Execute node
+            result = func(state)
 
-        # End tracking
-        tracker.node_end(node_name, result)
+            # Node completed successfully
+            result["last_completed_node"] = node_name
 
-        return result
+            # Append to completed nodes history (avoid duplicates)
+            if node_name not in result.get("completed_nodes", []):
+                result["completed_nodes"].append(node_name)
+
+            result["current_executing_node"] = None
+
+            # Special case: if this is the save_state_node, mark flow as completed
+            if node_name == "save_state":
+                result["flow_status"] = "completed"
+
+            # End tracking
+            tracker.node_end(node_name, result)
+
+            # Auto-save state after each node (except save_state_node to avoid double-save)
+            if node_name != "save_state" and result.get("project_id"):
+                try:
+                    project_data = state_to_project_dict(result, include_knowledge_facts=True)
+                    ProjectPersistence.save_project(project_data)
+                    tracker.log_message(f"✓ Auto-saved state after {node_name}", "info")
+                except Exception as save_error:
+                    # Try without knowledge_facts if schema not updated
+                    if "knowledge_facts" in str(save_error):
+                        try:
+                            project_data = state_to_project_dict(result, include_knowledge_facts=False)
+                            ProjectPersistence.save_project(project_data)
+                            tracker.log_message(f"✓ Auto-saved state after {node_name} (without knowledge_facts)", "info")
+                        except Exception as retry_error:
+                            tracker.log_message(f"⚠ Auto-save failed: {str(retry_error)}", "warning")
+                    else:
+                        tracker.log_message(f"⚠ Auto-save failed: {str(save_error)}", "warning")
+
+            return result
+
+        except Exception as e:
+            # Node failed - mark as failed but keep last_completed_node
+            state["flow_status"] = "failed"
+            state["current_executing_node"] = None
+            state["errors"].append(f"{node_name} failed: {str(e)}")
+
+            # Try to save failed state
+            try:
+                project_data = state_to_project_dict(state, include_knowledge_facts=False)
+                ProjectPersistence.save_project(project_data)
+                tracker.log_message(f"✓ Saved failed state after {node_name}", "info")
+            except Exception as save_error:
+                tracker.log_message(f"⚠ Failed to save error state: {str(save_error)}", "warning")
+
+            # Re-raise the original error
+            raise e
 
     return wrapper
 
@@ -39,13 +95,14 @@ def track_node(func):
 @track_node
 def load_context_node(state: AgentState) -> AgentState:
     """
-    Load project context from database if it exists
+    Load project context from database if it exists.
+    Detects if flow should be resumed from last checkpoint.
 
     Args:
         state: Current agent state
 
     Returns:
-        Updated state with loaded project data
+        Updated state with loaded project data and resumption flags
     """
     project_id = state["project_id"]
 
@@ -57,10 +114,50 @@ def load_context_node(state: AgentState) -> AgentState:
         state = load_project_into_state(state, project_data)
         state["messages"].append(f"Loaded existing project: {project_id}")
         state["session_num"] = len(project_data.get("config_history", [])) + 1
+
+        # Check if we should resume from a previous incomplete flow
+        flow_status = state.get("flow_status", "not_started")
+        last_completed = state.get("last_completed_node")
+        force_restart = state.get("force_restart", False)  # Can be set by CLI
+
+        if flow_status == "in_progress" and last_completed and not force_restart:
+            # Resume from last checkpoint
+            state["is_resuming"] = True
+            state["messages"].append("=" * 60)
+            state["messages"].append("RESUMING FROM CHECKPOINT")
+            state["messages"].append("=" * 60)
+            state["messages"].append(f"Last completed node: {last_completed}")
+            state["messages"].append(f"Completed nodes: {state.get('completed_nodes', [])}")
+            state["messages"].append(f"Resuming workflow from node: {last_completed}")
+            state["messages"].append("=" * 60)
+        elif flow_status == "failed" and last_completed and not force_restart:
+            # Previous flow failed - allow resume or restart
+            state["is_resuming"] = True
+            state["messages"].append("=" * 60)
+            state["messages"].append("PREVIOUS FLOW FAILED - RESUMING")
+            state["messages"].append("=" * 60)
+            state["messages"].append(f"Last completed node before failure: {last_completed}")
+            state["messages"].append(f"Retrying from next node after: {last_completed}")
+            state["messages"].append("=" * 60)
+        elif force_restart:
+            # User requested force restart - clear flow state
+            state["is_resuming"] = False
+            state["flow_status"] = "not_started"
+            state["last_completed_node"] = None
+            state["completed_nodes"] = []
+            state["current_executing_node"] = None
+            state["messages"].append("Force restart requested - starting fresh flow")
+        else:
+            # Normal new session on existing project
+            state["is_resuming"] = False
+            if flow_status == "completed":
+                state["messages"].append("Previous flow completed - starting new session")
+
     else:
         # New project
         state["messages"].append(f"New project: {project_id}")
         state["session_num"] = 1
+        state["is_resuming"] = False
 
     state["cycle_num"] += 1
 

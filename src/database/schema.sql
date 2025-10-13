@@ -21,6 +21,13 @@ CREATE TABLE projects (
     -- Possible values: 'initialized', 'strategy_built', 'awaiting_results', 'optimizing', 'completed'
     iteration INT DEFAULT 0,
 
+    -- Flow tracking (for resumption)
+    last_completed_node TEXT,
+    completed_nodes TEXT[] DEFAULT ARRAY[]::TEXT[],
+    flow_status TEXT DEFAULT 'not_started',
+    -- Possible values: 'not_started', 'in_progress', 'completed', 'failed'
+    current_executing_node TEXT,
+
     -- Accumulated data
     historical_data JSONB DEFAULT '{}',
     market_data JSONB DEFAULT '{}',
@@ -52,6 +59,7 @@ CREATE TABLE projects (
 -- Create index on user_id for faster lookups
 CREATE INDEX idx_projects_user_id ON projects(user_id);
 CREATE INDEX idx_projects_updated_at ON projects(updated_at DESC);
+CREATE INDEX idx_projects_flow_status ON projects(flow_status);
 
 -- Sessions table: Log each interaction/session
 CREATE TABLE sessions (
@@ -155,6 +163,10 @@ COMMENT ON TABLE uploaded_files IS 'Track uploaded files in Supabase Storage wit
 
 COMMENT ON COLUMN projects.current_phase IS 'Current stage of the campaign: initialized, strategy_built, awaiting_results, optimizing, completed';
 COMMENT ON COLUMN projects.iteration IS 'Number of optimization iterations completed';
+COMMENT ON COLUMN projects.last_completed_node IS 'Last successfully completed node in the workflow';
+COMMENT ON COLUMN projects.completed_nodes IS 'Ordered array of all completed nodes for audit trail';
+COMMENT ON COLUMN projects.flow_status IS 'Current flow status: not_started, in_progress, completed, failed';
+COMMENT ON COLUMN projects.current_executing_node IS 'Node currently being executed (for debugging)';
 COMMENT ON COLUMN sessions.decision IS 'LLM router decision: initialize, reflect, enrich, continue';
 COMMENT ON COLUMN uploaded_files.storage_path IS 'Path in Supabase Storage (format: project_id/filename)';
 COMMENT ON COLUMN uploaded_files.insights_cache IS 'Cached LLM-generated insights to avoid re-analysis of same file';

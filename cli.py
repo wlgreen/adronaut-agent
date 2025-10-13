@@ -337,6 +337,21 @@ def print_results(final_state):
     print(f"Phase: {final_state['current_phase']}")
     print(f"Iteration: {final_state['iteration']}")
 
+    # Flow tracking info
+    flow_status = final_state.get('flow_status', 'unknown')
+    print(f"\n--- Flow Status ---")
+    print(f"Status: {flow_status}")
+    if flow_status == "completed":
+        print("✓ Flow completed successfully")
+    elif flow_status == "in_progress":
+        print(f"⚠ Flow incomplete - last completed: {final_state.get('last_completed_node', 'N/A')}")
+    elif flow_status == "failed":
+        print(f"✗ Flow failed at: {final_state.get('current_executing_node', 'N/A')}")
+
+    completed_nodes = final_state.get('completed_nodes', [])
+    if completed_nodes:
+        print(f"Completed nodes ({len(completed_nodes)}): {' → '.join(completed_nodes)}")
+
     # Messages
     if final_state.get("messages"):
         print("\n--- Messages ---")
@@ -420,6 +435,43 @@ def run_command(args):
     # Get or create project (handles both UUID and name)
     project_id = get_or_create_project(args.project_id)
 
+    # Check if project has incomplete flow
+    if is_valid_uuid(args.project_id):
+        project = ProjectPersistence.load_project(args.project_id)
+        if project:
+            flow_status = project.get("flow_status", "not_started")
+            last_completed = project.get("last_completed_node")
+            completed_nodes = project.get("completed_nodes", [])
+
+            if flow_status == "in_progress" and last_completed:
+                print("\n" + "=" * 60)
+                print("  ⚠️  INCOMPLETE FLOW DETECTED")
+                print("=" * 60)
+                print(f"Flow status: {flow_status}")
+                print(f"Last completed node: {last_completed}")
+                print(f"Completed nodes: {completed_nodes}")
+                print("=" * 60)
+
+                if not args.restart:
+                    print("✓ Will resume from last checkpoint")
+                    print("  (Use --restart to force a fresh start)\n")
+                else:
+                    print("✓ Forcing fresh start (--restart flag used)\n")
+
+            elif flow_status == "failed" and last_completed:
+                print("\n" + "=" * 60)
+                print("  ⚠️  PREVIOUS FLOW FAILED")
+                print("=" * 60)
+                print(f"Last completed node before failure: {last_completed}")
+                print(f"Completed nodes: {completed_nodes}")
+                print("=" * 60)
+
+                if not args.restart:
+                    print("✓ Will retry from failed point")
+                    print("  (Use --restart to force a fresh start)\n")
+                else:
+                    print("✓ Forcing fresh start (--restart flag used)\n")
+
     # Prompt for files
     print("Upload files (comma-separated paths):")
     print("  Example: data/historical.csv,data/experiments.csv")
@@ -477,6 +529,10 @@ def run_command(args):
             uploaded_files=uploaded_files
         )
 
+        # Set force_restart flag if requested
+        if args.restart:
+            state["force_restart"] = True
+
         # Create session
         session_id = SessionPersistence.create_session(
             project_id=project_id,
@@ -522,6 +578,11 @@ def main():
         "--project-id",
         required=True,
         help="Project identifier: existing UUID or new project name (e.g., 'my-campaign-001')"
+    )
+    run_parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="Force restart flow even if resumption is possible (clears flow state)"
     )
 
     args = parser.parse_args()

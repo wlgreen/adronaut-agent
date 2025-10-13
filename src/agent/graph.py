@@ -1,5 +1,5 @@
 """
-LangGraph workflow assembly
+LangGraph workflow assembly with resumption support
 """
 
 from langgraph.graph import StateGraph, END
@@ -16,7 +16,34 @@ from .nodes import (
     adjustment_node,
     save_state_node,
 )
-from .router import router_node, get_next_node
+from .router import router_node, get_next_node, get_resume_node
+
+
+def should_skip_to_resume_point(state: AgentState) -> str:
+    """
+    Determine if we should skip directly to resume point.
+    This optimizes resumption by skipping already-completed nodes.
+
+    Returns:
+        "resume" to skip to resume point, "normal" for normal flow
+    """
+    is_resuming = state.get("is_resuming", False)
+    last_completed = state.get("last_completed_node")
+    completed_nodes = state.get("completed_nodes", [])
+
+    # If not resuming, follow normal flow
+    if not is_resuming or not last_completed:
+        return "normal"
+
+    # If load_context is the last completed, continue normally
+    if last_completed == "load_context":
+        return "normal"
+
+    # If we've already completed analyze_files and router, skip to resume point
+    if "analyze_files" in completed_nodes and "router" in completed_nodes:
+        return "resume"
+
+    return "normal"
 
 
 def create_campaign_agent_graph():
@@ -45,8 +72,17 @@ def create_campaign_agent_graph():
     # Set entry point
     workflow.set_entry_point("load_context")
 
+    # Conditional edge from load_context: skip to resume point or continue normally
+    workflow.add_conditional_edges(
+        "load_context",
+        should_skip_to_resume_point,
+        {
+            "normal": "analyze_files",
+            "resume": "router",  # Skip to router when resuming
+        },
+    )
+
     # Fixed edges for initial flow
-    workflow.add_edge("load_context", "analyze_files")
     workflow.add_edge("analyze_files", "router")
 
     # Conditional routing from router based on decision

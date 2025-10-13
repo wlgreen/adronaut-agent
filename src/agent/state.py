@@ -26,6 +26,14 @@ class AgentState(TypedDict):
     decision_reasoning: Optional[str]
     next_action: Optional[str]  # Next node to execute
 
+    # ===== Flow Tracking (for resumption) =====
+    last_completed_node: Optional[str]  # Last successfully completed node
+    completed_nodes: List[str]  # Ordered history of all completed nodes
+    flow_status: str  # 'not_started', 'in_progress', 'completed', 'failed'
+    current_executing_node: Optional[str]  # Currently executing node
+    is_resuming: bool  # Whether this is a resumed flow
+    force_restart: bool  # CLI flag to force restart even if resumption possible
+
     # ===== Project State (Loaded from DB) =====
     project_loaded: bool  # Whether project was loaded from DB
     current_phase: str  # 'initialized', 'strategy_built', 'awaiting_results', 'optimizing', 'completed'
@@ -95,6 +103,14 @@ def create_initial_state(
         decision_reasoning=None,
         next_action=None,
 
+        # Flow tracking
+        last_completed_node=None,
+        completed_nodes=[],
+        flow_status="not_started",
+        current_executing_node=None,
+        is_resuming=False,
+        force_restart=False,
+
         # Project state
         project_loaded=False,
         current_phase="initialized",
@@ -150,6 +166,12 @@ def load_project_into_state(
     state["current_phase"] = project_data.get("current_phase", "initialized")
     state["iteration"] = project_data.get("iteration", 0)
 
+    # Load flow tracking
+    state["last_completed_node"] = project_data.get("last_completed_node")
+    state["completed_nodes"] = project_data.get("completed_nodes", [])
+    state["flow_status"] = project_data.get("flow_status", "not_started")
+    state["current_executing_node"] = project_data.get("current_executing_node")
+
     # Load accumulated data
     state["historical_data"] = project_data.get("historical_data", {})
     state["market_data"] = project_data.get("market_data", {})
@@ -191,6 +213,12 @@ def state_to_project_dict(state: AgentState, include_knowledge_facts: bool = Tru
         "project_id": state["project_id"],
         "current_phase": state["current_phase"],
         "iteration": state["iteration"],
+
+        # Flow tracking
+        "last_completed_node": state.get("last_completed_node"),
+        "completed_nodes": state.get("completed_nodes", []),
+        "flow_status": state.get("flow_status", "not_started"),
+        "current_executing_node": state.get("current_executing_node"),
 
         "historical_data": state["historical_data"],
         "market_data": state["market_data"],
