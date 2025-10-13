@@ -165,22 +165,44 @@ Output files are versioned: `campaign_{project_id}_v{iteration}.json`
 
 If `TAVILY_API_KEY` is set, `data_collection_node` searches for market benchmarks based on product description. If not set, agent proceeds without web data.
 
-## User Question Context
+## Accelerated Learning Feature (NEW)
 
-Based on your question "should there be process to collect more data from the user or doing websearch to enhance the data?":
+The agent now supports **7-day parallel testing** instead of 21-day sequential testing, reducing learning time by 66%.
 
-The agent **already has both mechanisms**:
+**How it works:**
+- `insight.py` generates parallel experiment plans testing platform+audience+creative simultaneously
+- LLM creates 4-6 smart combinations based on historical data (e.g., "TikTok + Interest + UGC" at 30% budget)
+- Memory-based skipping: Uses historical winners to avoid testing obvious losers
+- Statistical validation: Each combination needs 15-20 conversions for 90% confidence
+
+**Key files:**
+- `src/modules/insight.py`: Updated prompt template for parallel experiments (line 73-90)
+- `src/modules/accelerated_learning.py`: Helper functions for validation and statistics
+- `cli.py`: New display function for combination matrix (line 252-356)
+
+**Generated plan structure:**
+```json
+{
+  "mode": "accelerated",
+  "total_duration_days": 7,
+  "day_1_to_7": {
+    "test_matrix": {
+      "combinations": [/* 4-6 combos */]
+    },
+    "decision_criteria": {
+      "min_conversions_per_combo": 15,
+      "confidence_level": 0.90
+    }
+  }
+}
+```
+
+See `docs/ACCELERATED_LEARNING.md` for full documentation.
+
+## Data Collection & Enhancement
+
+The agent has multiple mechanisms for gathering context:
 
 1. **Web search**: `data_collection_node` uses Tavily to search for market benchmarks (line 138-152 in `nodes.py`)
-2. **User data collection**: The agent accepts multiple file uploads per session and merges them into accumulated state
-
-**However**, the current implementation has limitations:
-- User prompts for missing data (product_description, target_budget) are **not interactive** (lines 160-164 just log missing fields)
-- Web search only runs once during initialization (not during enrich/reflect paths)
-- No mechanism to ask clarifying questions during strategy generation
-
-**Enhancement opportunities**:
-- Add interactive CLI prompts in `data_collection_node` when critical fields are missing
-- Trigger web search in `enrich` decision path to gather additional market data
-- Create a `human_in_loop_node` that pauses workflow for user input/approval
-- Add web search during reflection to gather competitive intelligence on underperforming areas
+2. **User data collection**: Accepts multiple file uploads per session, merges into accumulated state
+3. **Discovery node**: Parallel strategies (LLM inference + web search + user prompts) with minimal friction

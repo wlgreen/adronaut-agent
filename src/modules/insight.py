@@ -70,18 +70,24 @@ Based on this data, create a strategy that includes:
    - Recommend budget allocation based on historical ROI
    - Provide specific rationale with numbers
 
-5. EXPERIMENT PLAN:
-   Design 3 sequential experiments informed by historical data gaps and opportunities:
-   - Week 1: Platform test (based on historical platform comparison)
-   - Week 2: Audience test (test best historical audiences vs new segments)
-   - Week 3: Creative test (test winning formats vs new variations)
+5. EXPERIMENT PLAN (ACCELERATED 7-DAY PARALLEL TESTING):
+   Design parallel experiments to test platform, audience, and creative simultaneously in 7 days:
 
-   For each experiment, specify:
-   - Hypothesis (grounded in historical data)
-   - Variations to test
-   - Control vs test setup
-   - Success metrics
-   - Expected improvement based on historical benchmarks
+   CRITICAL INSTRUCTIONS FOR PARALLEL TESTING:
+   - Test 4-6 smart COMBINATIONS of platform+audience+creative together (not sequentially)
+   - Use historical data to skip obvious losers and focus budget on viable options
+   - Allocate budgets across combinations (e.g., 30% to best bet, 25% to hedge, etc.)
+   - Each combination needs 15-20 conversions minimum for statistical confidence
+   - Include interaction effects (some platform+creative combos work better together)
+
+   For the experiment plan, specify:
+   - Test matrix: 4-6 combinations with platform/audience/creative for each
+   - Budget allocation per combination (must sum to 100%)
+   - Rationale for each combination based on historical data
+   - Memory-based optimizations: What obvious losers are you skipping? Why?
+   - Decision criteria: Min conversions, confidence level, primary metric
+   - Evaluation schedule: Day 3 check (flag issues), Day 7 final decision
+   - Hypotheses for platform, audience, creative, and interaction effects
 
 CRITICAL: Respond with valid JSON in this EXACT format. All fields marked with [] MUST be arrays/lists, all fields marked with {{}} MUST be objects/dicts:
 {{
@@ -107,29 +113,49 @@ CRITICAL: Respond with valid JSON in this EXACT format. All fields marked with [
     "rationale": "explanation text"  // string
   }},
   "experiment_plan": {{
-    "week_1": {{
-      "name": "Platform Test",
-      "hypothesis": "hypothesis text",
-      "variations": ["variation 1", "variation 2"],  // MUST be array
-      "control": {{"setting": "value"}},  // MUST be object (can be empty {{}})
-      "metrics": ["CPA", "CTR", "ROAS"],  // MUST be array
-      "expected_improvement": "improvement text"
+    "mode": "accelerated",  // string
+    "total_duration_days": 7,  // number
+    "approach": "parallel_testing",  // string
+    "day_1_to_7": {{
+      "name": "Parallel Multi-Variable Test",  // string
+      "description": "Test platform, audience, and creative simultaneously",  // string
+      "test_matrix": {{
+        "combinations": [  // MUST be array of combination objects
+          {{
+            "id": "combo_1",  // string
+            "label": "Platform + Audience + Creative",  // string
+            "platform": "TikTok",  // string
+            "audience": "Interest targeting",  // string
+            "creative": "UGC video",  // string
+            "budget_allocation": "30%",  // string percentage
+            "rationale": "Why this combination makes sense"  // string
+          }}
+          // Include 4-6 combinations total
+        ]
+      }},
+      "decision_criteria": {{
+        "min_conversions_per_combo": 15,  // number
+        "confidence_level": 0.90,  // number (0-1)
+        "primary_metric": "CPA",  // string
+        "secondary_metrics": ["ROAS", "CTR"]  // MUST be array
+      }},
+      "evaluation_schedule": {{
+        "day_3": "Check preliminary results",  // string
+        "day_7": "Final evaluation and decision"  // string
+      }},
+      "hypotheses": {{
+        "platform": "Platform hypothesis with data",  // string
+        "audience": "Audience hypothesis with data",  // string
+        "creative": "Creative hypothesis with data",  // string
+        "interaction": "Interaction effect hypothesis"  // string
+      }},
+      "expected_outcome": "What we expect to learn in 7 days",  // string
+      "statistical_power": "Confidence calculation explanation"  // string
     }},
-    "week_2": {{
-      "name": "Audience Test",
-      "hypothesis": "hypothesis text",
-      "variations": ["variation 1", "variation 2"],  // MUST be array
-      "control": {{"setting": "value"}},  // MUST be object
-      "metrics": ["CPA", "CTR"],  // MUST be array
-      "expected_improvement": "improvement text"
-    }},
-    "week_3": {{
-      "name": "Creative Test",
-      "hypothesis": "hypothesis text",
-      "variations": ["variation 1", "variation 2"],  // MUST be array
-      "control": {{"setting": "value"}},  // MUST be object
-      "metrics": ["CPA", "ROAS"],  // MUST be array
-      "expected_improvement": "improvement text"
+    "memory_based_optimizations": {{
+      "skipped_tests": ["What we're NOT testing and why"],  // MUST be array
+      "confident_decisions": ["What we know from historical data"],  // MUST be array
+      "hedge_tests": ["What we're testing as backup options"]  // MUST be array
     }}
   }}
 }}
