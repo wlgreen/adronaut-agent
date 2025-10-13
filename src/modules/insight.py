@@ -83,53 +83,58 @@ Based on this data, create a strategy that includes:
    - Success metrics
    - Expected improvement based on historical benchmarks
 
-Respond with valid JSON in this format:
+CRITICAL: Respond with valid JSON in this EXACT format. All fields marked with [] MUST be arrays/lists, all fields marked with {{}} MUST be objects/dicts:
 {{
   "insights": {{
-    "patterns": ["list of key patterns"],
-    "strengths": ["list of strengths"],
-    "weaknesses": ["list of weaknesses"],
-    "benchmark_comparison": "How we compare to market"
+    "patterns": ["pattern 1", "pattern 2"],  // MUST be array of strings
+    "strengths": ["strength 1", "strength 2"],  // MUST be array of strings
+    "weaknesses": ["weakness 1", "weakness 2"],  // MUST be array of strings
+    "benchmark_comparison": "comparison text"  // string
   }},
   "target_audience": {{
-    "primary_segments": ["list of segments"],
-    "interests": ["list of interests"],
-    "demographics": {{"age": "", "gender": "", "location": ""}}
+    "primary_segments": ["segment 1", "segment 2"],  // MUST be array
+    "interests": ["interest 1", "interest 2"],  // MUST be array
+    "demographics": {{"age": "18-35", "gender": "all", "location": "US"}}  // MUST be object
   }},
   "creative_strategy": {{
-    "messaging_angles": ["list of angles"],
-    "themes": ["list of themes"],
-    "value_props": ["list of value propositions"]
+    "messaging_angles": ["angle 1", "angle 2"],  // MUST be array
+    "themes": ["theme 1", "theme 2"],  // MUST be array
+    "value_props": ["prop 1", "prop 2"]  // MUST be array
   }},
   "platform_strategy": {{
-    "priorities": ["platform 1", "platform 2"],
-    "budget_split": {{"platform 1": 0.6, "platform 2": 0.4}},
-    "rationale": "Explanation"
+    "priorities": ["Google Ads", "Meta"],  // MUST be array of platform names
+    "budget_split": {{"Google Ads": 0.6, "Meta": 0.4}},  // MUST be object with numeric values (0-1)
+    "rationale": "explanation text"  // string
   }},
   "experiment_plan": {{
     "week_1": {{
       "name": "Platform Test",
-      "hypothesis": "",
-      "variations": ["TikTok", "Meta"],
-      "control": {{}},
-      "metrics": ["CPA", "CTR", "ROAS"]
+      "hypothesis": "hypothesis text",
+      "variations": ["variation 1", "variation 2"],  // MUST be array
+      "control": {{"setting": "value"}},  // MUST be object (can be empty {{}})
+      "metrics": ["CPA", "CTR", "ROAS"],  // MUST be array
+      "expected_improvement": "improvement text"
     }},
     "week_2": {{
       "name": "Audience Test",
-      "hypothesis": "",
-      "variations": ["segment 1", "segment 2"],
-      "control": {{}},
-      "metrics": ["CPA", "CTR", "ROAS"]
+      "hypothesis": "hypothesis text",
+      "variations": ["variation 1", "variation 2"],  // MUST be array
+      "control": {{"setting": "value"}},  // MUST be object
+      "metrics": ["CPA", "CTR"],  // MUST be array
+      "expected_improvement": "improvement text"
     }},
     "week_3": {{
       "name": "Creative Test",
-      "hypothesis": "",
-      "variations": ["angle 1", "angle 2"],
-      "control": {{}},
-      "metrics": ["CPA", "CTR", "ROAS"]
+      "hypothesis": "hypothesis text",
+      "variations": ["variation 1", "variation 2"],  // MUST be array
+      "control": {{"setting": "value"}},  // MUST be object
+      "metrics": ["CPA", "ROAS"],  // MUST be array
+      "expected_improvement": "improvement text"
     }}
   }}
 }}
+
+DO NOT return any field as a plain string if it should be an array or object!
 """
 
 

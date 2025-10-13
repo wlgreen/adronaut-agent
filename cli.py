@@ -109,37 +109,69 @@ def print_strategy_details(strategy):
     if audience:
         print("\n🎯 TARGET AUDIENCE:")
         if audience.get("primary_segments"):
-            print(f"  Segments: {', '.join(audience['primary_segments'])}")
+            segments = audience['primary_segments']
+            if isinstance(segments, list):
+                print(f"  Segments: {', '.join(segments)}")
+            else:
+                print(f"  Segments: {segments}")
         if audience.get("demographics"):
             demo = audience["demographics"]
-            print(f"  Demographics: {demo.get('age', 'N/A')} | {demo.get('gender', 'N/A')} | {demo.get('location', 'N/A')}")
+            if isinstance(demo, dict):
+                print(f"  Demographics: {demo.get('age', 'N/A')} | {demo.get('gender', 'N/A')} | {demo.get('location', 'N/A')}")
+            else:
+                print(f"  Demographics: {demo}")
         if audience.get("interests"):
-            interests = audience['interests'][:5]  # First 5
-            print(f"  Key Interests: {', '.join(interests)}")
+            interests = audience['interests']
+            if isinstance(interests, list):
+                interests = interests[:5]  # First 5
+                print(f"  Key Interests: {', '.join(interests)}")
+            else:
+                print(f"  Key Interests: {interests}")
 
     # Creative Strategy
     creative = strategy.get("creative_strategy", {})
     if creative:
         print("\n🎨 CREATIVE STRATEGY:")
         if creative.get("messaging_angles"):
-            print("  Messaging Angles:")
-            for angle in creative["messaging_angles"][:3]:
-                print(f"    • {angle}")
+            angles = creative["messaging_angles"]
+            if isinstance(angles, list):
+                print("  Messaging Angles:")
+                for angle in angles[:3]:
+                    print(f"    • {angle}")
+            else:
+                print(f"  Messaging Angles: {angles}")
         if creative.get("value_props"):
-            print("  Value Propositions:")
-            for prop in creative["value_props"][:3]:
-                print(f"    • {prop}")
+            props = creative["value_props"]
+            if isinstance(props, list):
+                print("  Value Propositions:")
+                for prop in props[:3]:
+                    print(f"    • {prop}")
+            else:
+                print(f"  Value Propositions: {props}")
 
     # Platform Strategy
     platform = strategy.get("platform_strategy", {})
     if platform:
         print("\n📱 PLATFORM STRATEGY:")
         if platform.get("priorities"):
-            print(f"  Priority Platforms: {', '.join(platform['priorities'])}")
+            priorities = platform['priorities']
+            if isinstance(priorities, list):
+                print(f"  Priority Platforms: {', '.join(priorities)}")
+            else:
+                print(f"  Priority Platforms: {priorities}")
         if platform.get("budget_split"):
-            print("  Budget Allocation:")
-            for plat, pct in platform["budget_split"].items():
-                print(f"    {plat}: {int(pct * 100)}%")
+            budget_split = platform["budget_split"]
+            if isinstance(budget_split, dict):
+                print("  Budget Allocation:")
+                for plat, pct in budget_split.items():
+                    # Handle both numeric and string percentages
+                    try:
+                        pct_num = float(pct) if isinstance(pct, str) else pct
+                        print(f"    {plat}: {int(pct_num * 100)}%")
+                    except (ValueError, TypeError):
+                        print(f"    {plat}: {pct}")
+            else:
+                print(f"  Budget Allocation: {budget_split}")
         if platform.get("rationale"):
             print(f"  Rationale: {platform['rationale']}")
 
@@ -174,9 +206,13 @@ def print_experiment_plan(experiment_plan):
             print(f"    {week['hypothesis']}")
 
         if week.get("variations"):
-            print(f"\n  Variations:")
-            for var in week["variations"]:
-                print(f"    • {var}")
+            variations = week["variations"]
+            if isinstance(variations, list):
+                print(f"\n  Variations:")
+                for var in variations:
+                    print(f"    • {var}")
+            else:
+                print(f"\n  Variations: {variations}")
 
         if week.get("control"):
             print(f"\n  Control Setup:")
@@ -189,7 +225,11 @@ def print_experiment_plan(experiment_plan):
                 print(f"    {control}")
 
         if week.get("metrics"):
-            print(f"\n  Success Metrics: {', '.join(week['metrics'])}")
+            metrics = week["metrics"]
+            if isinstance(metrics, list):
+                print(f"\n  Success Metrics: {', '.join(metrics)}")
+            else:
+                print(f"\n  Success Metrics: {metrics}")
 
         if week.get("expected_improvement"):
             print(f"  Expected Improvement: {week['expected_improvement']}")
