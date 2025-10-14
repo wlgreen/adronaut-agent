@@ -190,20 +190,41 @@ def analyze_files_node(state: AgentState) -> AgentState:
             cached_record = FilePersistence.get_file_record(project_id, storage_path)
 
             if cached_record and cached_record.get("file_metadata") and cached_record.get("file_type"):
-                # Cache hit - use cached analysis
-                analysis = {
-                    "file_path": storage_path,
-                    "file_name": original_filename,
-                    "type": cached_record["file_type"],
-                    "row_count": cached_record["file_metadata"].get("row_count", 0),
-                    "columns": cached_record["file_metadata"].get("columns", []),
-                    "metrics": cached_record["file_metadata"].get("metrics", {}),
-                    "data": [],  # Don't load full data from cache
-                    "cached": True,
-                    "insights_cache": cached_record.get("insights_cache")
-                }
+                # Cache hit - check if we have cached insights or need to reload data
+                has_cached_insights = cached_record.get("insights_cache") is not None
 
-                state["messages"].append(f"✓ Using cached analysis for {original_filename}")
+                if has_cached_insights:
+                    # Full cache hit - use cached analysis without data
+                    analysis = {
+                        "file_path": storage_path,
+                        "file_name": original_filename,
+                        "type": cached_record["file_type"],
+                        "row_count": cached_record["file_metadata"].get("row_count", 0),
+                        "columns": cached_record["file_metadata"].get("columns", []),
+                        "metrics": cached_record["file_metadata"].get("metrics", {}),
+                        "data": [],  # Don't load full data when insights are cached
+                        "cached": True,
+                        "insights_cache": cached_record.get("insights_cache")
+                    }
+                    state["messages"].append(f"✓ Using cached analysis for {original_filename}")
+
+                else:
+                    # Partial cache hit - we have metadata but need to reload data for insights
+                    state["messages"].append(
+                        f"Reloading {original_filename} data for insight generation..."
+                    )
+
+                    # Download file from storage to /tmp
+                    local_path = download_file(storage_path)
+
+                    # Analyze file to get full data
+                    analysis = DataLoader.analyze_file(local_path)
+                    analysis["cached"] = False
+
+                    state["messages"].append(
+                        f"✓ Reloaded {original_filename}: "
+                        f"{analysis['type']}, {analysis['row_count']} rows"
+                    )
 
             else:
                 # Cache miss - download and analyze
