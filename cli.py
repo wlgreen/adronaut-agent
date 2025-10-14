@@ -531,18 +531,27 @@ def run_command(args):
                 else:
                     print("✓ Forcing fresh start (--restart flag used)\n")
 
-    # Prompt for files
-    print("Upload files (comma-separated paths):")
+    # Prompt for files or URLs
+    print("Upload files or product URLs (comma-separated):")
     print("  Example: data/historical.csv,data/experiments.csv")
+    print("  Or mix: https://mysite.com/product,data/historical.csv")
     print()
-    file_input = input("Files: ").strip()
+    input_str = input("Files or URLs: ").strip()
 
-    if not file_input:
-        print("Error: No files provided")
+    if not input_str:
+        print("Error: No files or URLs provided")
         return 1
 
-    # Parse file paths
-    file_paths = [p.strip() for p in file_input.split(",")]
+    # Parse inputs - separate URLs from file paths
+    inputs = [p.strip() for p in input_str.split(",")]
+    file_paths = []
+    product_urls = []
+
+    for item in inputs:
+        if item.startswith('http://') or item.startswith('https://'):
+            product_urls.append(item)
+        else:
+            file_paths.append(item)
 
     # Validate files exist
     for path in file_paths:
@@ -550,32 +559,45 @@ def run_command(args):
             print(f"Error: File not found: {path}")
             return 1
 
-    # Upload files to Supabase Storage first
-    print(f"\nUploading {len(file_paths)} file(s) to storage...")
+    # Show what we found
+    if product_urls:
+        print(f"\nDetected {len(product_urls)} URL(s):")
+        for url in product_urls:
+            print(f"  • {url}")
+    if file_paths:
+        print(f"\nDetected {len(file_paths)} file(s):")
+
+    # Upload files to Supabase Storage (if any)
     uploaded_files = []
 
-    try:
-        from src.storage.file_manager import upload_file
+    if file_paths:
+        print(f"\nUploading {len(file_paths)} file(s) to storage...")
 
-        for path in file_paths:
-            filename = Path(path).name
-            print(f"  Uploading {filename}...", end=" ")
+        try:
+            from src.storage.file_manager import upload_file
 
-            storage_path = upload_file(path, project_id)
+            for path in file_paths:
+                filename = Path(path).name
+                print(f"  Uploading {filename}...", end=" ")
 
-            uploaded_files.append({
-                "storage_path": storage_path,
-                "original_filename": filename
-            })
+                storage_path = upload_file(path, project_id)
 
-            print("✓")
+                uploaded_files.append({
+                    "storage_path": storage_path,
+                    "original_filename": filename
+                })
 
-    except Exception as e:
-        print(f"\nError uploading files: {str(e)}")
-        return 1
+                print("✓")
+
+        except Exception as e:
+            print(f"\nError uploading files: {str(e)}")
+            return 1
 
     print(f"\nStarting agent for project: {project_id}")
-    print(f"Files: {len(uploaded_files)}")
+    if uploaded_files:
+        print(f"Files: {len(uploaded_files)}")
+    if product_urls:
+        print(f"URLs: {len(product_urls)}")
 
     # Initialize progress tracker
     tracker = get_progress_tracker()
@@ -587,6 +609,10 @@ def run_command(args):
             project_id=project_id,
             uploaded_files=uploaded_files
         )
+
+        # Add product URLs to state if any
+        if product_urls:
+            state["product_urls"] = product_urls
 
         # Set force_restart flag if requested
         if args.restart:

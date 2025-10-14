@@ -20,6 +20,7 @@ class AgentState(TypedDict):
     # ===== Uploaded Files (Current Session) =====
     uploaded_files: List[Dict[str, Any]]  # List of file paths
     file_analyses: List[Dict[str, Any]]  # Analyzed file data
+    product_urls: Optional[List[str]]  # Product URLs to scrape (optional)
 
     # ===== Router Decision =====
     decision: Optional[str]  # 'initialize', 'reflect', 'enrich', 'continue'
@@ -97,6 +98,7 @@ def create_initial_state(
         # Uploaded files
         uploaded_files=uploaded_files,
         file_analyses=[],
+        product_urls=None,  # Will be set by CLI if URLs provided
 
         # Router decision
         decision=None,

@@ -413,6 +413,52 @@ def parallel_web_search(state: AgentState) -> Dict[str, Dict[str, Any]]:
     return facts
 
 
+def process_product_urls(state: AgentState) -> Dict[str, Dict[str, Any]]:
+    """
+    Process product URLs and extract information
+
+    Args:
+        state: Current agent state
+
+    Returns:
+        Dictionary of facts extracted from URLs
+    """
+    from ..modules.url_scraper import scrape_product_url
+
+    facts = {}
+    product_urls = state.get("product_urls", [])
+
+    if not product_urls:
+        return facts
+
+    state.get("messages", []).append(f"🔍 Processing {len(product_urls)} product URL(s)...")
+
+    for url in product_urls:
+        try:
+            state.get("messages", []).append(f"  Scraping: {url}")
+            url_facts = scrape_product_url(url)
+
+            # Check for errors
+            if 'error' in url_facts:
+                state.get("messages", []).append(f"  ⚠ {url_facts['error']['value']}")
+                continue
+
+            # Merge facts (later URLs override earlier ones if conflict)
+            facts.update(url_facts)
+
+            # Log what was extracted
+            extracted_keys = [k for k in url_facts.keys() if k != 'source_url']
+            if extracted_keys:
+                state.get("messages", []).append(f"  ✓ Extracted: {', '.join(extracted_keys)}")
+            else:
+                state.get("messages", []).append(f"  ⊘ No information extracted")
+
+        except Exception as e:
+            state.get("messages", []).append(f"  ⚠ Error processing {url}: {str(e)}")
+
+    return facts
+
+
 def ask_user_batch(missing_keys: list, state: AgentState) -> Dict[str, Dict[str, Any]]:
     """
     Ask user multiple questions at once in batch
@@ -488,8 +534,27 @@ def discovery_node(state: AgentState) -> AgentState:
     state["messages"].append("DISCOVERY PROCESS")
     state["messages"].append("="*60)
 
+    # Strategy 0: Product URL Extraction (if URLs provided)
+    product_urls = state.get("product_urls", [])
+    if product_urls:
+        state["messages"].append("\n[Strategy 0/4] Product URL Analysis")
+        url_facts = process_product_urls(state)
+
+        if url_facts:
+            knowledge.update(url_facts)
+            state["messages"].append(f"  ✓ Extracted {len(url_facts)} facts from URL(s)")
+            for key, fact in url_facts.items():
+                if key != 'source_url':  # Don't log the source URL itself
+                    value_preview = str(fact['value'])[:50] + "..." if len(str(fact['value'])) > 50 else str(fact['value'])
+                    state["messages"].append(f"    - {key}: {value_preview} (conf: {fact['confidence']:.2f})")
+        else:
+            state["messages"].append("  ⊘ No facts extracted from URLs")
+    else:
+        state["messages"].append("\n[Strategy 0/4] Product URL Analysis")
+        state["messages"].append("  ⊘ No URLs provided")
+
     # Strategy 1: LLM Inference from historical data
-    state["messages"].append("\n[Strategy 1/3] LLM Inference from Historical Data")
+    state["messages"].append("\n[Strategy 1/4] LLM Inference from Historical Data")
     inferred = infer_facts_from_data(state)
 
     if inferred:
@@ -503,7 +568,7 @@ def discovery_node(state: AgentState) -> AgentState:
         state["messages"].append("  ⊘ No facts inferred")
 
     # Strategy 2: Parallel Web Search
-    state["messages"].append("\n[Strategy 2/3] Parallel Web Search")
+    state["messages"].append("\n[Strategy 2/4] Parallel Web Search")
     web_facts = parallel_web_search(state)
 
     if web_facts:
@@ -520,7 +585,7 @@ def discovery_node(state: AgentState) -> AgentState:
             state["messages"].append("  ⊘ Web search skipped (no Tavily API key)")
 
     # Strategy 3: User Questions (only for critical missing facts)
-    state["messages"].append("\n[Strategy 3/3] User Input for Critical Facts")
+    state["messages"].append("\n[Strategy 3/4] User Input for Critical Facts")
     critical_facts = ["product_description", "target_budget"]
 
     missing = []
