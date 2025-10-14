@@ -165,4 +165,48 @@ Changes to make:
         task_name=task_name,
     )
 
+    # ENHANCEMENT: Attach creative assets from execution plan
+    experiment_plan = state.get("experiment_plan", {})
+    if experiment_plan:
+        creative_assets = extract_creative_prompts(experiment_plan)
+        if creative_assets:
+            config["creative_assets"] = creative_assets
+            print(f"  ✓ Attached {len(creative_assets)} creative assets to campaign config")
+
     return config
+
+
+def extract_creative_prompts(experiment_plan: Dict[str, Any]) -> list:
+    """
+    Extract all creative prompts from execution plan
+
+    Args:
+        experiment_plan: Execution plan with timeline and test combinations
+
+    Returns:
+        List of creative assets with prompts and metadata
+    """
+    creative_assets = []
+
+    # Handle both old format (phases at top level) and new format (timeline.phases)
+    timeline = experiment_plan.get("timeline", experiment_plan)
+    phases = timeline.get("phases", [])
+
+    for phase in phases:
+        for combo in phase.get("test_combinations", []):
+            creative_gen = combo.get("creative_generation")
+
+            # Only include combos with valid creative generation data
+            if creative_gen and not creative_gen.get("error"):
+                creative_asset = {
+                    "combo_id": combo.get("id", "unknown"),
+                    "phase": phase.get("name", "Unknown Phase"),
+                    "platform": combo.get("platform", "Unknown"),
+                    "audience": combo.get("audience", "Unknown"),
+                    "creative_style": combo.get("creative", "Unknown"),
+                    "budget_percent": combo.get("budget_percent", 0),
+                    "creative_generation": creative_gen
+                }
+                creative_assets.append(creative_asset)
+
+    return creative_assets

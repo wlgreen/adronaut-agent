@@ -254,6 +254,50 @@ def print_execution_timeline(execution_plan):
                         rationale = rationale[:57] + "..."
                     print(f"           → {rationale}")
 
+                # Display creative generation prompts
+                creative = combo.get("creative_generation")
+                if creative:
+                    if creative.get("error"):
+                        print(f"           ⚠ Creative: {creative.get('note', 'Manual development required')}")
+                    else:
+                        print(f"           📸 Creative Brief:")
+
+                        # Visual prompt (truncated)
+                        visual_prompt = creative.get("visual_prompt", "")
+                        if visual_prompt:
+                            visual_preview = visual_prompt[:80] + "..." if len(visual_prompt) > 80 else visual_prompt
+                            print(f"              Visual: {visual_preview}")
+
+                        # Ad copy
+                        copy_text = creative.get("copy_primary_text", "")
+                        if copy_text:
+                            copy_preview = copy_text[:60] + "..." if len(copy_text) > 60 else copy_text
+                            print(f"              Copy: \"{copy_preview}\"")
+
+                        # Headline
+                        headline = creative.get("copy_headline", "")
+                        if headline:
+                            print(f"              Headline: \"{headline}\"")
+
+                        # CTA
+                        cta = creative.get("copy_cta", "")
+                        if cta:
+                            print(f"              CTA: {cta}")
+
+                        # Hooks (show first hook + count)
+                        hooks = creative.get("hooks", [])
+                        if hooks:
+                            first_hook = hooks[0][:50] + "..." if len(hooks[0]) > 50 else hooks[0]
+                            additional = f" (+{len(hooks)-1} more)" if len(hooks) > 1 else ""
+                            print(f"              Hooks: \"{first_hook}\"{additional}")
+
+                        # Technical specs
+                        specs = creative.get("technical_specs", {})
+                        if specs:
+                            aspect_ratio = specs.get("aspect_ratio", "?")
+                            dimensions = specs.get("dimensions", "?")
+                            print(f"              Specs: {aspect_ratio} | {dimensions}")
+
         # Success criteria
         criteria = phase.get("success_criteria", [])
         if criteria:
@@ -317,6 +361,21 @@ def print_execution_timeline(execution_plan):
             print(f"  Contingency plans:")
             for plan in contingencies:
                 print(f"    → {plan}")
+
+    # Print creative assets summary
+    total_creatives = 0
+    platforms_with_creatives = set()
+    for phase in phases:
+        for combo in phase.get("test_combinations", []):
+            if combo.get("creative_generation") and not combo.get("creative_generation", {}).get("error"):
+                total_creatives += 1
+                platforms_with_creatives.add(combo.get("platform", "Unknown"))
+
+    if total_creatives > 0:
+        print(f"\n📸 CREATIVE ASSETS SUMMARY:")
+        print(f"  Total creative briefs generated: {total_creatives}")
+        print(f"  Platforms covered: {', '.join(sorted(platforms_with_creatives))}")
+        print(f"  Ready for AI image generation (DALL-E, Midjourney, etc.)")
 
     print("\n" + "─" * 60)
     print(f"  ⏱️  Total Duration: {total_days} days (max 30 days)")

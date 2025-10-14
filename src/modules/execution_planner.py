@@ -4,6 +4,12 @@ Flexible execution timeline planner - LLM-powered adaptive testing schedules
 
 from typing import Dict, Any, List
 from ..llm.gemini import get_gemini
+from ..modules.creative_generator import (
+    generate_creative_prompts,
+    generate_creative_prompts_batch,
+    validate_creative_prompt,
+    validate_creative_prompts_batch
+)
 
 
 EXECUTION_PLANNER_SYSTEM_INSTRUCTION = """You are an expert campaign testing strategist.
@@ -226,6 +232,96 @@ Files: {len(hist_metadata.get('files', []))}
         temperature=0.6,  # Balance creativity with structure
         task_name="Execution Timeline Planning",
     )
+
+    # ENHANCEMENT: Add creative generation prompts to each test combination
+    # Use batch generation by phase for 2-3x performance improvement
+    print("\n  Generating creative prompts (batch mode by phase)...")
+
+    phases = timeline.get("timeline", {}).get("phases", [])
+    total_phases = len(phases)
+    total_creatives_generated = 0
+
+    for phase_idx, phase in enumerate(phases, 1):
+        combos = phase.get("test_combinations", [])
+
+        if not combos:
+            continue
+
+        phase_name = phase.get("name", f"Phase {phase_idx}")
+        phase_objectives = ", ".join(phase.get("objectives", []))
+
+        print(f"  [{phase_idx}/{total_phases}] {phase_name} ({len(combos)} combinations)...")
+
+        try:
+            # Try batch generation first (2-3x faster)
+            creatives_batch = generate_creative_prompts_batch(
+                test_combinations=combos,
+                strategy=strategy,
+                user_inputs=state.get("user_inputs", {}),
+                phase_name=phase_name,
+                phase_description=phase_objectives
+            )
+
+            # Check if batch generation succeeded
+            if creatives_batch and len(creatives_batch) == len(combos):
+                # Validate batch
+                is_valid, errors = validate_creative_prompts_batch(creatives_batch, combos)
+
+                if not is_valid:
+                    print(f"    ⚠ Batch validation warnings: {errors[:3]}")  # Show first 3 errors
+
+                # Attach creatives to combos
+                for combo, creative in zip(combos, creatives_batch):
+                    combo["creative_generation"] = creative
+                    total_creatives_generated += 1
+
+                print(f"    ✓ Batch generated {len(combos)} creatives for {phase_name}")
+
+            else:
+                # Batch generation failed - fall back to individual generation
+                print(f"    → Batch failed, using individual generation...")
+
+                for combo_idx, combo in enumerate(combos):
+                    try:
+                        # Generate creative prompts individually
+                        creative_prompts = generate_creative_prompts(
+                            test_combination=combo,
+                            strategy=strategy,
+                            user_inputs=state.get("user_inputs", {})
+                        )
+
+                        # Validate
+                        is_valid, errors = validate_creative_prompt(
+                            creative_prompts,
+                            combo.get("platform", "Meta")
+                        )
+
+                        if not is_valid:
+                            print(f"      ⚠ Validation warnings for {combo.get('id', 'combo')}: {errors}")
+
+                        # Attach to combo
+                        combo["creative_generation"] = creative_prompts
+                        total_creatives_generated += 1
+                        print(f"      ✓ {combo.get('id', 'combo')} ({combo.get('platform')})")
+
+                    except Exception as e:
+                        # Fallback for individual combo failure
+                        print(f"      ⚠ Failed {combo.get('id', 'combo')}: {str(e)}")
+                        combo["creative_generation"] = {
+                            "error": str(e),
+                            "note": "Manual creative development required"
+                        }
+
+        except Exception as phase_error:
+            # Phase-level error - mark all combos as failed
+            print(f"    ✗ Phase creative generation failed: {str(phase_error)}")
+            for combo in combos:
+                combo["creative_generation"] = {
+                    "error": str(phase_error),
+                    "note": "Manual creative development required"
+                }
+
+    print(f"  ✓ Generated {total_creatives_generated} total creative briefs across {total_phases} phases")
 
     return timeline
 
