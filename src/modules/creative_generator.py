@@ -45,84 +45,107 @@ PLATFORM_SPECS = {
 }
 
 
-CREATIVE_GENERATION_SYSTEM_INSTRUCTION = """You are an expert ad creative director specializing in performance marketing and AI-generated imagery.
+CREATIVE_GENERATION_SYSTEM_INSTRUCTION = """You are a world-class creative director who understands what makes people stop scrolling and actually care.
 
-Your job is to create detailed creative briefs that can be used to:
-1. Generate images via DALL-E, Midjourney, or Stable Diffusion
-2. Write compelling ad copy for the target platform
-3. Provide multiple hook options for A/B testing
+Your mission: Create ad creative that sounds like a real human talking, not a brand yelling. Every piece should feel native to where it appears—casual and authentic on TikTok, aspirational but relatable on Meta, direct and helpful on Google.
 
-Key principles:
-- Platform-native aesthetics (TikTok = authentic/UGC, Meta = polished lifestyle, Google = clean/informative)
-- Audience-appropriate visual language (Gen-Z = vibrant/trendy, Millennials = aspirational/refined, etc.)
-- Specific, actionable image prompts (composition, lighting, style, mood, colors)
-- Compelling, benefit-driven copy that matches the messaging angle
-- Multiple hook variations to test different psychological triggers
+What makes great creative:
+• It sounds like something a friend would actually say
+• It taps into real emotions, not manufactured hype
+• It tells a story, not just lists benefits
+• It respects the platform's culture and voice
+• It makes people feel something before it asks them to do something
 
-Focus on creating prompts that will generate platform-native, high-performing creative assets.
+Platform voices (how people actually talk there):
+- TikTok: Casual, no caps, trending phrases, POV format, Gen-Z slang when authentic. Think "not me doing [thing]" or "hear me out..."
+- Meta: Aspirational storytelling, lifestyle-focused, emotional but polished. Think transformation narratives and relatable struggles.
+- Google: Direct, search-intent driven, informational. People are looking for solutions—give them clarity and credibility.
+
+What to avoid (these scream "ad" and get ignored):
+- Generic claims: "leading solution", "innovative", "game-changing"
+- Corporate jargon: "leverage", "optimize your experience", "synergize"
+- Overused hooks: "Did you know...", "Imagine if...", "What if I told you..."
+- Forced enthusiasm: excessive punctuation, emoji spam, ALL CAPS
+- Benefit lists without story or emotion
+
+Start with why someone would care. Then give them a reason to believe. Then make it easy to act.
 """
 
 
 CREATIVE_GENERATION_PROMPT_TEMPLATE = """
-Create a complete creative brief for this ad test combination:
+You're creating an ad that will appear on {platform} for {audience_segment}. The creative style is "{creative_style}" and the messaging angle is "{messaging_angle}".
 
-PLATFORM: {platform}
-AUDIENCE: {audience_segment}
-CREATIVE STYLE: {creative_style}
-MESSAGING ANGLE: {messaging_angle}
-
-PRODUCT CONTEXT:
+ABOUT THE PRODUCT:
 {product_description}
 
-BRAND GUIDELINES:
+BRAND VOICE & GUIDELINES:
 {brand_guidelines}
 
-STRATEGIC DIRECTION:
-Value Propositions: {value_props}
-Key Themes: {themes}
-Target Demographics: {demographics}
+KEY MESSAGES TO WORK WITH:
+• Value propositions: {value_props}
+• Themes: {themes}
+• Who you're talking to: {demographics}
 
-REQUIREMENTS:
+Now, here's what you need to create:
 
-1. IMAGE GENERATION PROMPT:
-   Write a detailed prompt for AI image generation (DALL-E, Midjourney, Stable Diffusion).
-   - Be VERY specific about: composition, lighting, style, mood, colors, subjects, setting
-   - Match {platform} native aesthetic (e.g., TikTok = authentic UGC style, Meta = polished lifestyle)
-   - Target {audience_segment} visual preferences
-   - Incorporate the creative style: {creative_style}
-   - Length: 50-150 words for optimal results
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎨 VISUAL PROMPT (for AI image generation)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-2. AD COPY:
-   - Primary text: Compelling body copy that delivers on the messaging angle
-   - Headline: Attention-grabbing, benefit-focused headline
-   - CTA: Choose appropriate call-to-action (SHOP_NOW, LEARN_MORE, SIGN_UP, DOWNLOAD, etc.)
-   - Copy should match platform limits for {platform}
+Write a 50-150 word prompt that an AI (DALL-E, Midjourney, Stable Diffusion) can use to generate the perfect image.
 
-3. HOOKS:
-   Provide 5 different opening hooks to test various psychological angles:
-   - Curiosity-driven
-   - Problem-aware
-   - Aspirational
-   - Social proof
-   - Urgency/scarcity
+Think about what would make someone on {platform} stop scrolling:
+• What's the composition? (Close-up? Scene? Product in context?)
+• What's the mood and lighting? (Bright and energetic? Moody and aspirational?)
+• What style matches {platform}? (TikTok = raw/authentic, Meta = polished/lifestyle, Google = clean/informative)
+• What visual metaphors or scenes connect to "{messaging_angle}"?
+• Who or what is in the frame, and what are they doing?
 
-4. TECHNICAL SPECS:
-   - Specify aspect ratio and dimensions for {platform} (use platform best practices)
-   - Recommend brand asset placement (logo, watermark)
-   - Suggest color scheme that aligns with brand and platform
+Be specific enough that someone could paint this from your description.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✍️ AD COPY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Write copy that sounds like a real human on {platform} would talk:
+
+**Primary text**: The main body of your ad. Tell a micro-story or make one compelling point. Don't just list benefits—make them feel something. Keep it natural for {platform}.
+
+**Headline**: One punchy line that grabs attention. Not a generic claim—something specific and intriguing.
+
+**CTA**: Pick the right call-to-action for the goal (SHOP_NOW, LEARN_MORE, SIGN_UP, DOWNLOAD, GET_STARTED, etc.)
+
+Remember: Platform character limits matter, so stay within {platform}'s guidelines.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎣 HOOKS (5 variations)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Write 5 completely different opening hooks that feel native to {platform}. Don't label them—just write them naturally.
+
+Mix up your approach:
+• Start with a relatable moment or observation
+• Lead with a surprising fact or realization
+• Open with the transformation or outcome
+• Use social proof or credibility if authentic
+• Create urgency only if it's genuine
+
+Each hook should stand alone and sound like something a real person would say to a friend.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 CRITICAL: Respond with valid JSON in this EXACT format:
 {{
-  "visual_prompt": "Detailed image generation prompt here...",
-  "copy_primary_text": "Main ad copy text",
-  "copy_headline": "Headline text",
+  "visual_prompt": "Your detailed image generation prompt...",
+  "copy_primary_text": "Natural-sounding main ad copy",
+  "copy_headline": "Attention-grabbing headline",
   "copy_cta": "SHOP_NOW",
   "hooks": [
-    "Hook 1 - curiosity based",
-    "Hook 2 - problem aware",
-    "Hook 3 - aspirational",
-    "Hook 4 - social proof",
-    "Hook 5 - urgency based"
+    "First hook - natural and conversational",
+    "Second hook - different angle",
+    "Third hook - another approach",
+    "Fourth hook - varies from others",
+    "Fifth hook - distinct voice or angle"
   ],
   "technical_specs": {{
     "aspect_ratio": "1:1",
@@ -137,73 +160,69 @@ CRITICAL: Respond with valid JSON in this EXACT format:
 
 
 CREATIVE_BATCH_GENERATION_PROMPT_TEMPLATE = """
-Create creative briefs for {num_combinations} test combinations in {phase_name}.
+You're creating {num_combinations} different ad creatives for the "{phase_name}" phase. Each needs to feel distinct but stay on-brand.
 
-PHASE CONTEXT:
+WHAT WE'RE TESTING:
 {phase_description}
 
-PRODUCT CONTEXT:
+ABOUT THE PRODUCT:
 {product_description}
 
-BRAND GUIDELINES:
+BRAND VOICE & GUIDELINES:
 {brand_guidelines}
 
-STRATEGIC DIRECTION:
-Value Propositions: {value_props}
-Key Themes: {themes}
-Target Demographics: {demographics}
+KEY MESSAGES TO WORK WITH:
+• Value propositions: {value_props}
+• Themes: {themes}
+• Who we're talking to: {demographics}
 
-TEST COMBINATIONS:
+HERE ARE THE {num_combinations} COMBINATIONS TO CREATE:
 {combinations_details}
 
-REQUIREMENTS FOR EACH COMBINATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FOR EACH COMBINATION, CREATE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. IMAGE GENERATION PROMPT:
-   - Detailed prompt for AI image generation (50-150 words)
-   - Platform-specific aesthetic (TikTok = authentic UGC, Meta = polished lifestyle, etc.)
-   - Audience-appropriate visual language
-   - Distinct from other creatives in this batch
+🎨 **VISUAL PROMPT** (50-150 words for AI image generation)
+   Make each image conceptually different. Think about what would make someone stop scrolling on that specific platform. Be visual and specific.
 
-2. AD COPY:
-   - Primary text matching messaging angle
-   - Attention-grabbing headline
-   - Appropriate CTA (SHOP_NOW, LEARN_MORE, SIGN_UP, etc.)
-   - Platform-compliant copy length
+✍️ **AD COPY** (Primary text, Headline, CTA)
+   Write like a human on that platform would talk. Tell a micro-story or make a compelling point—don't just list features. Each combination should have a different angle or emotional hook.
 
-3. HOOKS:
-   - 5 different opening hooks (curiosity, problem-aware, aspirational, social proof, urgency)
-   - Ensure variety across all combinations in this batch
+🎣 **HOOKS** (5 variations per combination)
+   Write naturally for the platform. Don't label them. Each of the 5 should explore different ways to start the conversation. And make sure combinations don't all sound the same.
 
-4. TECHNICAL SPECS:
-   - Platform-appropriate dimensions and aspect ratio
-   - Brand asset placement recommendations
-   - Color scheme aligned with brand
+IMPORTANT:
+• Each combination should feel meaningfully DIFFERENT from the others (different visual concepts, different copy angles, different emotional tones)
+• But all should sound like they're from the same brand voice
+• Respect each platform's native language (TikTok = casual, Meta = aspirational, Google = direct)
+• Avoid generic claims, corporate jargon, and overused patterns
 
-CRITICAL INSTRUCTIONS:
-- Ensure each creative is DISTINCT with different angles/hooks/visuals
-- Maintain brand consistency across all
-- Each creative should target different psychological triggers
-- Respond with valid JSON array
-
-RESPONSE FORMAT:
+RESPONSE FORMAT (valid JSON):
 {{
   "creatives": [
     {{
       "combination_id": "combo_1",
-      "visual_prompt": "...",
-      "copy_primary_text": "...",
-      "copy_headline": "...",
-      "copy_cta": "...",
-      "hooks": ["...", "...", "...", "...", "..."],
+      "visual_prompt": "Detailed, specific image prompt...",
+      "copy_primary_text": "Natural ad copy...",
+      "copy_headline": "Punchy headline...",
+      "copy_cta": "SHOP_NOW",
+      "hooks": [
+        "Hook 1 - sounds natural",
+        "Hook 2 - different approach",
+        "Hook 3 - varies",
+        "Hook 4 - distinct",
+        "Hook 5 - unique angle"
+      ],
       "technical_specs": {{
-        "aspect_ratio": "...",
-        "dimensions": "...",
-        "file_format": "...",
-        "file_size_max": "...",
-        "brand_assets": ["..."],
-        "color_scheme": "..."
+        "aspect_ratio": "1:1",
+        "dimensions": "1080x1080",
+        "file_format": "PNG",
+        "file_size_max": "30MB",
+        "brand_assets": ["placement details"],
+        "color_scheme": "color codes"
       }}
-    }},
+    }}
     ... (repeat for all {num_combinations} combinations)
   ]
 }}
@@ -281,7 +300,7 @@ def generate_creative_prompts(
     creative_prompts = gemini.generate_json(
         prompt=prompt,
         system_instruction=CREATIVE_GENERATION_SYSTEM_INSTRUCTION,
-        temperature=0.7,  # Higher creativity for visual/copy generation
+        temperature=0.8,  # Higher temperature for more natural, creative outputs
         task_name="Creative Prompt Generation",
     )
 
@@ -381,7 +400,7 @@ COMBINATION {idx} (ID: {combo_id}):
         response = gemini.generate_json(
             prompt=prompt,
             system_instruction=CREATIVE_GENERATION_SYSTEM_INSTRUCTION,
-            temperature=0.7,  # Higher creativity for visual/copy generation
+            temperature=0.8,  # Higher temperature for more natural, creative outputs
             task_name="Creative Batch Generation",
         )
 
