@@ -649,6 +649,399 @@ def run_command(args):
         return 1
 
 
+def deploy_to_meta_command(args):
+    """Deploy campaign config to Meta Ads via API"""
+    import os
+    from src.integrations.meta_ads import MetaAdsAPI, MetaAdsError
+
+    config_path = Path(args.config_path)
+
+    if not config_path.exists():
+        print(f"Error: Config file not found: {config_path}")
+        return 1
+
+    # Load config
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON in config file: {config_path}")
+        return 1
+
+    meta_config = config.get("meta", {})
+    if not meta_config:
+        print("Error: No 'meta' section found in config")
+        return 1
+
+    # Print banner
+    print("=" * 60)
+    print("  Meta Ads Deployment")
+    print("=" * 60)
+    print()
+    print(f"Config file: {config_path}")
+    print(f"Campaign: {meta_config.get('campaign_name', 'Untitled')}")
+    print(f"Daily budget: ${meta_config.get('daily_budget', 0)}")
+    print()
+
+    # Check for dry-run mode
+    dry_run = args.dry_run or os.getenv('META_DRY_RUN', '').lower() == 'true'
+    sandbox_mode = os.getenv('META_SANDBOX_MODE', '').lower() == 'true'
+
+    if dry_run:
+        print("🔧 DRY RUN MODE: No actual API calls will be made")
+        print()
+
+    # Get credentials from environment
+    access_token = os.getenv('META_ACCESS_TOKEN')
+    ad_account_id = os.getenv('META_AD_ACCOUNT_ID')
+    page_id = os.getenv('META_PAGE_ID')
+    instagram_actor_id = os.getenv('META_INSTAGRAM_ACTOR_ID')
+
+    # Use sandbox credentials if in sandbox mode
+    if sandbox_mode:
+        access_token = os.getenv('META_SANDBOX_TOKEN') or access_token
+        ad_account_id = os.getenv('META_SANDBOX_ACCOUNT_ID') or ad_account_id
+        print("🧪 SANDBOX MODE: Using Meta sandbox environment")
+        print()
+
+    # Validate credentials
+    if not dry_run:
+        if not access_token:
+            print("Error: META_ACCESS_TOKEN not set in environment")
+            print("Set it in .env or export META_ACCESS_TOKEN=your_token")
+            return 1
+        if not ad_account_id:
+            print("Error: META_AD_ACCOUNT_ID not set in environment")
+            print("Set it in .env or export META_AD_ACCOUNT_ID=act_your_id")
+            return 1
+        if not page_id:
+            print("Warning: META_PAGE_ID not set - creative creation will be skipped")
+
+    # Initialize API
+    try:
+        api = MetaAdsAPI(
+            access_token=access_token or "test_token",
+            ad_account_id=ad_account_id or "act_test",
+            page_id=page_id,
+            instagram_actor_id=instagram_actor_id,
+            dry_run=dry_run,
+            sandbox_mode=sandbox_mode
+        )
+    except Exception as e:
+        print(f"Error initializing Meta Ads API: {e}")
+        return 1
+
+    # Deploy campaign
+    print("Starting deployment...")
+    print()
+
+    try:
+        result = api.create_campaign_from_config(config)
+
+        # Print results
+        print("\n" + "=" * 60)
+        print("  Deployment Complete")
+        print("=" * 60)
+        print()
+        print(f"✓ Campaign ID: {result['campaign_id']}")
+        print(f"✓ Ad Set IDs: {', '.join(result['ad_set_ids'])}")
+
+        if result['ad_ids']:
+            print(f"✓ Ad IDs: {', '.join(result['ad_ids'])}")
+        if result['creative_ids']:
+            print(f"✓ Creative IDs: {', '.join(result['creative_ids'])}")
+
+        print(f"\nStatus: {result['status']}")
+
+        if result['status'] == 'PAUSED':
+            print("\n⚠️  Campaign created in PAUSED state")
+            print("   Review in Meta Ads Manager, then activate when ready")
+            print("   https://business.facebook.com/adsmanager")
+
+        print()
+
+        # Save deployment result
+        result_filename = config_path.stem + "_deployment_result.json"
+        with open(result_filename, 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"✓ Deployment result saved to: {result_filename}")
+        print()
+
+        return 0
+
+    except MetaAdsError as e:
+        print(f"\n❌ Meta Ads API Error: {e}")
+        print()
+        print("Common issues:")
+        print("  • Invalid access token or expired")
+        print("  • Ad account ID incorrect")
+        print("  • Missing permissions (needs ads_management)")
+        print("  • Rate limiting (try again later)")
+        print()
+        return 1
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def export_manual_guide_command(args):
+    """Export manual ad setup guide from config file"""
+    config_path = Path(args.config_path)
+
+    if not config_path.exists():
+        print(f"Error: Config file not found: {config_path}")
+        return 1
+
+    # Load config
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON in config file: {config_path}")
+        return 1
+
+    meta_config = config.get("meta", {})
+    if not meta_config:
+        print("Error: No 'meta' section found in config")
+        return 1
+
+    # Generate manual guide
+    output_path = args.output or config_path.stem + "_manual_setup.md"
+
+    print("=" * 60)
+    print("  Manual Meta Ads Setup Guide Generator")
+    print("=" * 60)
+    print()
+    print(f"Reading config: {config_path}")
+    print(f"Output file: {output_path}")
+    print()
+
+    # Generate checklist content
+    guide_content = generate_manual_checklist(config)
+
+    # Write to file
+    with open(output_path, 'w') as f:
+        f.write(guide_content)
+
+    print(f"✓ Manual setup guide generated: {output_path}")
+    print()
+    print("Next steps:")
+    print("  1. Open the generated markdown file")
+    print("  2. Follow the checklist to create ads in Meta Ads Manager")
+    print("  3. Check off items as you complete them")
+    print()
+
+    return 0
+
+
+def generate_manual_checklist(config):
+    """Generate customized manual checklist from config"""
+    meta = config.get("meta", {})
+    campaign_name = meta.get("campaign_name", "Untitled Campaign")
+    daily_budget = meta.get("daily_budget", 0)
+    objective = meta.get("objective", "CONVERSIONS")
+
+    targeting = meta.get("targeting", {})
+    age_range = targeting.get("age_range", "18-65")
+    locations = targeting.get("locations", ["US"])
+    detailed = targeting.get("detailed_targeting", {})
+    interests = detailed.get("interests", [])
+    behaviors = detailed.get("behaviors", [])
+
+    placements = meta.get("placements", [])
+    optimization = meta.get("optimization", {})
+    bidding = meta.get("bidding", {})
+    creative_specs = meta.get("creative_specs", {})
+    schedule = meta.get("schedule", {})
+
+    # Build checklist markdown
+    md = f"""# Manual Meta Ads Setup Checklist
+**Generated from config**: {campaign_name}
+
+This checklist guides you through creating ads manually in Meta Ads Manager using your agent-generated config.
+
+📖 **Full Documentation**: See `/docs/MANUAL_META_ADS_SETUP.md` for detailed instructions.
+
+---
+
+## Campaign: {campaign_name}
+
+### Campaign Setup
+- [ ] Log in to [Meta Ads Manager](https://business.facebook.com/adsmanager)
+- [ ] Click **Create** campaign
+- [ ] Select objective: **{objective}** ({"Sales/Conversions" if objective == "CONVERSIONS" else "Traffic" if objective == "OUTCOME_TRAFFIC" else objective})
+- [ ] Campaign name: `{campaign_name}`
+- [ ] Special ad categories: None (unless applicable)
+- [ ] Click **Continue**
+
+---
+
+## Ad Set: {campaign_name} - Ad Set 1
+
+### Budget & Schedule
+- [ ] Daily budget: **${daily_budget:.2f}/day**
+- [ ] Start date: {schedule.get("start_date", "Set to today or desired date")}
+- [ ] End date: {"No end date" if not schedule.get("end_date") else schedule.get("end_date")}
+
+### Audience Targeting
+
+#### Locations
+"""
+
+    # Add locations
+    for loc in locations:
+        md += f"- [ ] Add location: **{loc}**\n"
+
+    md += f"\n#### Demographics\n"
+    md += f"- [ ] Age: **{age_range}**\n"
+    md += f"- [ ] Gender: **{targeting.get('gender', 'All')}**\n"
+
+    # Language
+    if targeting.get("language"):
+        md += f"- [ ] Language: **{targeting.get('language')}**\n"
+
+    # Detailed targeting
+    md += "\n#### Detailed Targeting\n"
+    if interests:
+        md += "**Interests** (add each):\n"
+        for interest in interests:
+            md += f"- [ ] {interest}\n"
+
+    if behaviors:
+        md += "\n**Behaviors** (add each):\n"
+        for behavior in behaviors:
+            md += f"- [ ] {behavior}\n"
+
+    # Custom audiences
+    custom = targeting.get("custom_audiences", [])
+    if custom:
+        md += "\n**Custom Audiences**:\n"
+        for aud in custom:
+            md += f"- [ ] {aud}\n"
+
+    # Placements
+    md += f"\n### Placements\n"
+    md += "- [ ] Select **Manual Placements**\n"
+    md += "- [ ] Uncheck **Automatic Placements**\n"
+    md += "Check only these placements:\n"
+    for placement in placements:
+        md += f"- [ ] {placement}\n"
+
+    # Optimization
+    md += f"\n### Optimization & Delivery\n"
+    opt_goal = optimization.get("optimization_goal", "CONVERSIONS")
+    md += f"- [ ] Performance goal: **{opt_goal}**\n"
+
+    if opt_goal == "CONVERSIONS":
+        md += f"- [ ] Conversion event: **{optimization.get('pixel_event', 'Purchase')}**\n"
+
+    attribution = optimization.get("conversion_window", "7_DAY_CLICK")
+    md += f"- [ ] Attribution: **{attribution}**\n"
+
+    # Bidding
+    md += f"\n### Bidding Strategy\n"
+    bid_strategy = bidding.get("strategy", "LOWEST_COST_WITHOUT_CAP")
+
+    if bid_strategy == "LOWEST_COST_WITH_BID_CAP":
+        bid_amount = bidding.get("bid_amount", 0)
+        md += f"- [ ] Bid strategy: **Cost per result goal**\n"
+        md += f"- [ ] Bid cap: **${bid_amount:.2f}**\n"
+    else:
+        md += f"- [ ] Bid strategy: **Highest volume** (no bid cap)\n"
+
+    md += f"- [ ] Billing: **Impressions** (default)\n"
+
+    # Creative
+    md += f"\n---\n\n## Creative\n\n"
+    md += "### Upload Media\n"
+
+    formats = creative_specs.get("formats", ["Video or Image"])
+    if isinstance(formats, list):
+        formats_str = ", ".join(formats)
+    else:
+        formats_str = formats
+
+    md += f"- [ ] Format: {formats_str}\n"
+
+    duration = creative_specs.get("duration")
+    if duration:
+        md += f"- [ ] Duration: {duration}\n"
+
+    aspect_ratio = creative_specs.get("aspect_ratio")
+    if aspect_ratio:
+        md += f"- [ ] Aspect ratio: {aspect_ratio}\n"
+
+    md += "\n### Ad Copy\n"
+
+    # Messaging
+    messaging = creative_specs.get("messaging", [])
+    if messaging:
+        md += "**Primary Text** (use these themes):\n"
+        for msg in messaging[:3]:  # First 3
+            md += f"- {msg}\n"
+        md += "\n- [ ] Write primary text incorporating above themes\n"
+    else:
+        md += "- [ ] Write primary text\n"
+
+    # Headline
+    headline = creative_specs.get("name")
+    if headline:
+        md += f"\n**Headline**:\n"
+        md += f"- [ ] Enter: \"{headline}\"\n"
+    else:
+        md += f"- [ ] Enter headline (40 characters max)\n"
+
+    # Destination & CTA
+    md += f"\n### Destination\n"
+
+    link = creative_specs.get("link", "https://your-website.com")
+    md += f"- [ ] Website URL: `{link}`\n"
+
+    cta_type = creative_specs.get("call_to_action", {}).get("type", "SHOP_NOW")
+    md += f"- [ ] Call to Action: **{cta_type}**\n"
+
+    # Instagram
+    md += f"\n### Instagram (if using Instagram placements)\n"
+    md += f"- [ ] Connect Instagram account\n"
+    md += f"- [ ] Verify Instagram actor ID is set\n"
+
+    # Review
+    md += f"\n---\n\n## Review & Publish\n\n"
+    md += f"- [ ] Review all settings against this checklist\n"
+    md += f"- [ ] Generate ad preview for each placement\n"
+    md += f"- [ ] Check image/video displays correctly\n"
+    md += f"- [ ] Verify text not cut off\n"
+    md += f"- [ ] Set status to **PAUSED**\n"
+    md += f"- [ ] Click **Publish**\n"
+    md += f"- [ ] Wait for ad review (24-48 hours)\n"
+    md += f"- [ ] Check review status in Ads Manager\n"
+    md += f"- [ ] Activate when approved\n"
+
+    # Summary
+    summary = config.get("summary", {})
+    if summary:
+        md += f"\n---\n\n## Campaign Summary\n\n"
+        md += f"**Total Daily Budget**: ${summary.get('total_daily_budget', 0)}\n\n"
+
+        experiment = summary.get("experiment")
+        if experiment:
+            md += f"**Experiment**: {experiment}\n\n"
+
+        expected = summary.get("expected_outcomes", {})
+        if expected:
+            md += f"**Expected Outcomes**:\n"
+            for key, value in expected.items():
+                md += f"- {key}: {value}\n"
+
+    md += f"\n---\n\n"
+    md += f"**Generated by Adronaut Agent**\n\n"
+    md += f"For detailed instructions, see: `/docs/MANUAL_META_ADS_SETUP.md`\n"
+
+    return md
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
@@ -670,6 +1063,37 @@ def main():
         help="Force restart flow even if resumption is possible (clears flow state)"
     )
 
+    # Deploy to Meta command
+    deploy_parser = subparsers.add_parser(
+        "deploy-to-meta",
+        help="Deploy campaign config to Meta Ads via API"
+    )
+    deploy_parser.add_argument(
+        "--config-path",
+        required=True,
+        help="Path to campaign config JSON file (e.g., campaign_xxx_v0.json)"
+    )
+    deploy_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Test mode - log API calls without executing (no Meta API calls made)"
+    )
+
+    # Export manual guide command
+    export_parser = subparsers.add_parser(
+        "export-manual-guide",
+        help="Generate manual setup guide from campaign config"
+    )
+    export_parser.add_argument(
+        "--config-path",
+        required=True,
+        help="Path to campaign config JSON file (e.g., campaign_xxx_v0.json)"
+    )
+    export_parser.add_argument(
+        "--output",
+        help="Output markdown file path (default: <config>_manual_setup.md)"
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -678,6 +1102,10 @@ def main():
 
     if args.command == "run":
         return run_command(args)
+    elif args.command == "deploy-to-meta":
+        return deploy_to_meta_command(args)
+    elif args.command == "export-manual-guide":
+        return export_manual_guide_command(args)
 
     return 0
 
