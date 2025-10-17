@@ -104,29 +104,41 @@ Now, here's what you need to create:
 🎨 VISUAL PROMPT (Professional Creative Brief)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-You are writing a creative brief for a professional photographer or image generation model (Nano Banana, Gemini 2.5 Flash Image). This should be a single flowing paragraph (250-600 words) that sounds like art direction for a high-end commercial photoshoot.
+You are a professional creative prompt author for high-end advertising photography.
+Your task is to write one refined, production-ready image prompt for an image-generation model (such as Nano Banana or Gemini 2.5 Flash Image).
 
-STRUCTURE YOUR PARAGRAPH IN THIS ORDER:
+The output must sound like a creative brief for a commercial photographer — realistic, cinematic, emotionally resonant, and brand-consistent.
 
-1. **Scene Setup**: Describe the location, time of day, light quality, and atmosphere. Where does this take place? What's the environment and mood?
+STRUCTURE (in this order):
 
-2. **Subject**: Who or what appears in the scene? Describe their pose, clothing, expression, and what they're doing. If featuring people, show authentic moments that feel natural to the platform.
+1. **Scene setup**: Describe the location, time of day, light quality, and mood.
 
-3. **Product Fidelity**: How does the product look based on its actual specifications? Describe its exact size, color, texture, materials, and logo placement. Reference real product details—do not invent or exaggerate features. Show the product in a way that feels natural to "{messaging_angle}".
+2. **Subject**: Describe who or what is in the image, their action, attire, and demeanor.
 
-4. **Lighting & Camera**: What's the direction of light? Is it warm or cool? What style of shadows? What lens perspective or depth of field cues create the right feel for {platform}? (TikTok = natural/candid, Meta = cinematic/editorial, Google = clean/studio)
+3. **Product fidelity**: Describe the product precisely (shape, color, materials, proportions, logo placement) based on the uploaded reference.
 
-5. **Texture & Detail**: Highlight the craftsmanship—stitching, reflections on surfaces, material textures, and small details that convey quality and realism. Make it feel tangible and premium.
+4. **Lighting and camera**: Describe light direction, color temperature, exposure, lens perspective, and depth of field.
 
-6. **Brand Emotion & Composition**: What's the emotional mood and lifestyle this conveys? How does the composition use negative space for potential text overlays or logo placement? What feeling should someone get when they see this on {platform}?
+5. **Texture and detail**: Mention stitching, fabric texture, reflections, and tactile realism.
 
-TONE & STYLE:
-• Write in the voice of a professional art director or commercial photographer
-• One flowing paragraph, not bullet points or lists
-• Emphasize photographic realism, cinematic depth, and editorial quality
-• Platform-appropriate mood: TikTok = authentic/raw, Meta = aspirational/polished, Google = informative/clean
+6. **Brand emotion and composition**: Convey the mood (premium, minimalist, adventurous, elegant, etc.) and note clean negative space for possible text overlay.
+
+PRODUCT VISIBILITY AND FIDELITY REQUIREMENTS:
+
+• The product must be clearly visible and prominent — occupying roughly one-third of the frame.
+• It must be unobstructed, positioned naturally (e.g., at the model's waist if wearable).
+• Maintain exact proportions and materials from the reference image — do not stylize, resize, or alter the design.
+• Lighting must illuminate all key details (logo, stitching, zippers, texture).
+• If there is any conflict, always prioritize product accuracy and visibility over background or subject.
+
+TONE AND QUALITY:
+
+• Use photographic realism — emulate professional editorial lighting and camera optics.
+• Keep the language clear, descriptive, and cinematic, not technical or imperative.
+• Avoid lists, directives, or "generate" verbs — write as one flowing paragraph.
+• Maintain premium brand tone similar to Arc'teryx, Peak Design, or Patagonia campaigns.
+• End with a sense of professional polish ("editorial, print-ready advertising photography").
 • Roughly 250-600 words of rich visual description
-• If multiple product angles are needed, describe them as part of a cohesive composition with consistent lighting and tone
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✍️ AD COPY
@@ -209,17 +221,33 @@ FOR EACH COMBINATION, CREATE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🎨 **VISUAL PROMPT** (Professional Creative Brief, 250-600 words)
-   Write a single flowing paragraph like an art director briefing a professional photographer for a high-end commercial shoot or image generation model (Nano Banana, Gemini 2.5 Flash Image).
+   You are a professional creative prompt author for high-end advertising photography.
+   Write one refined, production-ready image prompt for an image-generation model (such as Nano Banana or Gemini 2.5 Flash Image).
+   The output must sound like a creative brief for a commercial photographer — realistic, cinematic, emotionally resonant, and brand-consistent.
 
-   Structure each prompt with these 6 elements in order:
-   1. Scene setup (location, time of day, light quality, atmosphere)
-   2. Subject (who/what appears, pose, clothing, expression, action)
-   3. Product fidelity (exact size, color, texture, materials, logo—reference real product details, don't invent)
-   4. Lighting & camera (light direction, warmth/coolness, shadows, lens perspective, depth of field appropriate for the platform)
-   5. Texture & detail (stitching, reflections, materials, craftsmanship—make it tangible and premium)
-   6. Brand emotion & composition (mood, lifestyle feeling, negative space for text/logo, emotional resonance for the platform)
+   STRUCTURE (in this order):
+   1. Scene setup: Describe the location, time of day, light quality, and mood.
+   2. Subject: Describe who or what is in the image, their action, attire, and demeanor.
+   3. Product fidelity: Describe the product precisely (shape, color, materials, proportions, logo placement) based on the uploaded reference.
+   4. Lighting and camera: Describe light direction, color temperature, exposure, lens perspective, and depth of field.
+   5. Texture and detail: Mention stitching, fabric texture, reflections, and tactile realism.
+   6. Brand emotion and composition: Convey the mood (premium, minimalist, adventurous, elegant, etc.) and note clean negative space for possible text overlay.
 
-   Make each combination's visual conceptually DIFFERENT from the others while maintaining cohesive brand tone. Platform-appropriate mood: TikTok = authentic/raw, Meta = aspirational/polished, Google = informative/clean.
+   PRODUCT VISIBILITY AND FIDELITY REQUIREMENTS:
+   • The product must be clearly visible and prominent — occupying roughly one-third of the frame.
+   • It must be unobstructed, positioned naturally (e.g., at the model's waist if wearable).
+   • Maintain exact proportions and materials from the reference image — do not stylize, resize, or alter the design.
+   • Lighting must illuminate all key details (logo, stitching, zippers, texture).
+   • If there is any conflict, always prioritize product accuracy and visibility over background or subject.
+
+   TONE AND QUALITY:
+   • Use photographic realism — emulate professional editorial lighting and camera optics.
+   • Keep the language clear, descriptive, and cinematic, not technical or imperative.
+   • Avoid lists, directives, or "generate" verbs — write as one flowing paragraph.
+   • Maintain premium brand tone similar to Arc'teryx, Peak Design, or Patagonia campaigns.
+   • End with a sense of professional polish ("editorial, print-ready advertising photography").
+
+   Make each combination's visual conceptually DIFFERENT from the others while maintaining cohesive brand tone.
 
 ✍️ **AD COPY** (Primary text, Headline, CTA)
    Write like a human on that platform would talk. Tell a micro-story or make a compelling point—don't just list features. Each combination should have a different angle or emotional hook.
