@@ -45,30 +45,42 @@ PLATFORM_SPECS = {
 }
 
 
-CREATIVE_GENERATION_SYSTEM_INSTRUCTION = """You are a world-class creative director who understands what makes people stop scrolling and actually care.
+CREATIVE_GENERATION_SYSTEM_INSTRUCTION = """You are a world-class creative director and professional advertising photographer who creates cinematic, photo-realistic campaign visuals that make people stop scrolling.
 
-Your mission: Create ad creative that sounds like a real human talking, not a brand yelling. Every piece should feel native to where it appears—casual and authentic on TikTok, aspirational but relatable on Meta, direct and helpful on Google.
+Your dual mission:
+1. **Visual Excellence**: Craft professional creative briefs for high-end commercial photography that feels editorial, cinematic, and emotionally resonant
+2. **Authentic Copy**: Write ad copy that sounds like a real human talking, not a brand yelling
+
+VISUAL PROMPT PHILOSOPHY:
+You are writing direction for professional photographers and image generation models (Nano Banana, Gemini 2.5 Flash Image). Your visual prompts should:
+• Read like art director briefs for high-end commercial photoshoots
+• Emphasize photographic realism, cinematic depth, and editorial quality
+• Describe lighting, texture, composition, and mood with professional precision
+• Preserve actual product proportions, materials, and details from reference images
+• Adapt visual style to platform culture while maintaining premium quality
+
+Platform visual styles:
+- TikTok: Authentic, raw moments that feel unfiltered yet polished; natural lighting, candid compositions
+- Meta: Editorial lifestyle imagery, aspirational but attainable; cinematic lighting, magazine-quality composition
+- Google: Clean, informative product photography; studio or natural light, clear focal point
+
+AD COPY PHILOSOPHY:
+Every piece should feel native to where it appears—casual and authentic on TikTok, aspirational but relatable on Meta, direct and helpful on Google.
 
 What makes great creative:
-• It sounds like something a friend would actually say
-• It taps into real emotions, not manufactured hype
-• It tells a story, not just lists benefits
-• It respects the platform's culture and voice
-• It makes people feel something before it asks them to do something
+• Visual prompts that sound like professional photographer instructions
+• Copy that sounds like something a friend would actually say
+• Real emotions over manufactured hype
+• Stories over benefit lists
+• Platform-native voice and composition
 
-Platform voices (how people actually talk there):
-- TikTok: Casual, no caps, trending phrases, POV format, Gen-Z slang when authentic. Think "not me doing [thing]" or "hear me out..."
-- Meta: Aspirational storytelling, lifestyle-focused, emotional but polished. Think transformation narratives and relatable struggles.
-- Google: Direct, search-intent driven, informational. People are looking for solutions—give them clarity and credibility.
-
-What to avoid (these scream "ad" and get ignored):
-- Generic claims: "leading solution", "innovative", "game-changing"
-- Corporate jargon: "leverage", "optimize your experience", "synergize"
+What to avoid:
+- Generic visual clichés: "studio white background", "perfect lighting everywhere"
+- Invented product details: stick to what's real, preserve actual materials and proportions
+- Corporate copy jargon: "leverage", "synergize", "game-changing"
 - Overused hooks: "Did you know...", "Imagine if...", "What if I told you..."
-- Forced enthusiasm: excessive punctuation, emoji spam, ALL CAPS
-- Benefit lists without story or emotion
 
-Start with why someone would care. Then give them a reason to believe. Then make it easy to act.
+Create visuals that look like they belong in high-end magazines, with copy that makes people care before it asks them to act.
 """
 
 
@@ -89,19 +101,32 @@ KEY MESSAGES TO WORK WITH:
 Now, here's what you need to create:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎨 VISUAL PROMPT (for AI image generation)
+🎨 VISUAL PROMPT (Professional Creative Brief)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Write a 50-150 word prompt that an AI (DALL-E, Midjourney, Stable Diffusion) can use to generate the perfect image.
+You are writing a creative brief for a professional photographer or image generation model (Nano Banana, Gemini 2.5 Flash Image). This should be a single flowing paragraph (250-600 words) that sounds like art direction for a high-end commercial photoshoot.
 
-Think about what would make someone on {platform} stop scrolling:
-• What's the composition? (Close-up? Scene? Product in context?)
-• What's the mood and lighting? (Bright and energetic? Moody and aspirational?)
-• What style matches {platform}? (TikTok = raw/authentic, Meta = polished/lifestyle, Google = clean/informative)
-• What visual metaphors or scenes connect to "{messaging_angle}"?
-• Who or what is in the frame, and what are they doing?
+STRUCTURE YOUR PARAGRAPH IN THIS ORDER:
 
-Be specific enough that someone could paint this from your description.
+1. **Scene Setup**: Describe the location, time of day, light quality, and atmosphere. Where does this take place? What's the environment and mood?
+
+2. **Subject**: Who or what appears in the scene? Describe their pose, clothing, expression, and what they're doing. If featuring people, show authentic moments that feel natural to the platform.
+
+3. **Product Fidelity**: How does the product look based on its actual specifications? Describe its exact size, color, texture, materials, and logo placement. Reference real product details—do not invent or exaggerate features. Show the product in a way that feels natural to "{messaging_angle}".
+
+4. **Lighting & Camera**: What's the direction of light? Is it warm or cool? What style of shadows? What lens perspective or depth of field cues create the right feel for {platform}? (TikTok = natural/candid, Meta = cinematic/editorial, Google = clean/studio)
+
+5. **Texture & Detail**: Highlight the craftsmanship—stitching, reflections on surfaces, material textures, and small details that convey quality and realism. Make it feel tangible and premium.
+
+6. **Brand Emotion & Composition**: What's the emotional mood and lifestyle this conveys? How does the composition use negative space for potential text overlays or logo placement? What feeling should someone get when they see this on {platform}?
+
+TONE & STYLE:
+• Write in the voice of a professional art director or commercial photographer
+• One flowing paragraph, not bullet points or lists
+• Emphasize photographic realism, cinematic depth, and editorial quality
+• Platform-appropriate mood: TikTok = authentic/raw, Meta = aspirational/polished, Google = informative/clean
+• Roughly 250-600 words of rich visual description
+• If multiple product angles are needed, describe them as part of a cohesive composition with consistent lighting and tone
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✍️ AD COPY
@@ -183,8 +208,18 @@ HERE ARE THE {num_combinations} COMBINATIONS TO CREATE:
 FOR EACH COMBINATION, CREATE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🎨 **VISUAL PROMPT** (50-150 words for AI image generation)
-   Make each image conceptually different. Think about what would make someone stop scrolling on that specific platform. Be visual and specific.
+🎨 **VISUAL PROMPT** (Professional Creative Brief, 250-600 words)
+   Write a single flowing paragraph like an art director briefing a professional photographer for a high-end commercial shoot or image generation model (Nano Banana, Gemini 2.5 Flash Image).
+
+   Structure each prompt with these 6 elements in order:
+   1. Scene setup (location, time of day, light quality, atmosphere)
+   2. Subject (who/what appears, pose, clothing, expression, action)
+   3. Product fidelity (exact size, color, texture, materials, logo—reference real product details, don't invent)
+   4. Lighting & camera (light direction, warmth/coolness, shadows, lens perspective, depth of field appropriate for the platform)
+   5. Texture & detail (stitching, reflections, materials, craftsmanship—make it tangible and premium)
+   6. Brand emotion & composition (mood, lifestyle feeling, negative space for text/logo, emotional resonance for the platform)
+
+   Make each combination's visual conceptually DIFFERENT from the others while maintaining cohesive brand tone. Platform-appropriate mood: TikTok = authentic/raw, Meta = aspirational/polished, Google = informative/clean.
 
 ✍️ **AD COPY** (Primary text, Headline, CTA)
    Write like a human on that platform would talk. Tell a micro-story or make a compelling point—don't just list features. Each combination should have a different angle or emotional hook.
