@@ -191,10 +191,27 @@ def analyze_files_node(state: AgentState) -> AgentState:
 
             if cached_record and cached_record.get("file_metadata") and cached_record.get("file_type"):
                 # Cache hit - check if we have cached insights or need to reload data
-                has_cached_insights = cached_record.get("insights_cache") is not None
+                insights_cache = cached_record.get("insights_cache")
+                has_cached_insights = insights_cache is not None
+
+                # Validate cached insights are not empty
+                if has_cached_insights:
+                    strategy = insights_cache.get("strategy", {})
+                    insights = strategy.get("insights", {})
+                    patterns = insights.get("patterns", [])
+
+                    # Check if insights contain actual data (not generic "no data" messages)
+                    has_valid_insights = (
+                        len(patterns) > 0
+                        and "No historical campaign data" not in str(patterns)
+                    )
+
+                    if not has_valid_insights:
+                        has_cached_insights = False
+                        state["messages"].append(f"⚠ Cached insights for {original_filename} are empty - will reload data")
 
                 if has_cached_insights:
-                    # Full cache hit - use cached analysis without data
+                    # Full cache hit with valid insights - use cached analysis without data
                     analysis = {
                         "file_path": storage_path,
                         "file_name": original_filename,
@@ -940,16 +957,30 @@ def insight_node(state: AgentState) -> AgentState:
 
         # Decision: Use cached or generate new
         if not new_files and cached_files:
-            # Scenario 1: All files cached - skip LLM call
+            # Scenario 1: All files cached - check if cached insights are valid
             strategy = merge_cached_insights(cached_files)
-            state["current_strategy"] = strategy
-            state["current_phase"] = "strategy_built"
-            state["messages"].append("✓ Using cached insights (no LLM call)")
 
-            # Extract execution timeline from cached strategy
-            state["experiment_plan"] = strategy.get("execution_timeline", {})
+            # Validate cached strategy has actual insights
+            has_valid_insights = (
+                strategy
+                and strategy.get("insights")
+                and strategy["insights"].get("patterns")
+                and len(strategy["insights"]["patterns"]) > 0
+                and "No historical campaign data" not in str(strategy["insights"]["patterns"])
+            )
 
-        else:
+            if has_valid_insights:
+                # Cached insights are valid - use them
+                state["current_strategy"] = strategy
+                state["current_phase"] = "strategy_built"
+                state["messages"].append("✓ Using cached insights (no LLM call)")
+                state["experiment_plan"] = strategy.get("execution_timeline", {})
+            else:
+                # Cached insights are empty/invalid - force regeneration
+                state["messages"].append("⚠ Cached insights are empty - regenerating with fresh data")
+                cached_files = []  # Treat as new files to trigger regeneration
+
+        if (new_files or not cached_files):
             # Scenario 2: New files present - generate with context
             cached_context = extract_cached_context(cached_files) if cached_files else None
 
