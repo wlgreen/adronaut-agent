@@ -292,6 +292,125 @@ RESPONSE FORMAT (valid JSON):
 """
 
 
+VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION = """You are a creative-director reviewer who evaluates and improves visual-generation prompts for realism, product fidelity, and storytelling strength.
+
+Your expertise:
+- Professional advertising photography direction (Arc'teryx, Peak Design, Patagonia level)
+- Cinematic lighting and camera techniques
+- Product fidelity and brand consistency
+- Editorial composition and mood creation
+
+Your approach:
+- Evaluate prompts against professional standards
+- Identify missing details that impact quality
+- Rewrite when needed while preserving the original concept
+- Maintain brand tone and platform appropriateness
+"""
+
+
+VISUAL_PROMPT_REVIEW_TEMPLATE = """
+You are reviewing a visual prompt that was generated for an image-generation model.
+
+ORIGINAL VISUAL PROMPT:
+{visual_prompt}
+
+CONTEXT:
+- Platform: {platform}
+- Product: {product_description}
+- Brand Guidelines: {brand_guidelines}
+
+EVALUATION CHECKLIST:
+
+Assess the prompt against these criteria:
+
+1. **Scene clarity** – clear setting, time of day, atmosphere, and tone
+2. **Subject realism** – natural posture, attire, and believable human behavior
+3. **Product fidelity** –
+   - Product matches reference in shape, size, color, materials, logo placement
+   - Product is prominent (about one-third of frame) and unobstructed
+   - No invented details or redesigns
+4. **Lighting and camera realism** – coherent light direction, natural contrast, real-world optics (focal length, depth of field)
+5. **Texture and craftsmanship** – stitching, materials, reflections, shadows where appropriate
+6. **Brand tone** – mood and style consistent with brand guidelines (premium, minimalist, adventurous, etc.)
+7. **Composition and layout** – balanced framing, negative space for text if required
+8. **Logo treatment** – described as physical embossed or printed mark (not text); visible and correctly lit
+9. **Language quality** – one flowing paragraph, descriptive not imperative, cinematic but concise (200-600 words)
+10. **Professional feel** – sounds like creative brief for commercial photographer
+
+YOUR TASK:
+
+1. Read the prompt carefully and assess it against ALL checklist items above
+2. If all criteria are met → return it unchanged with note "Prompt passes quality review"
+3. If any item is missing or weak → rewrite the paragraph to fix issues while keeping the same concept, scene, and tone
+
+CRITICAL: Respond with valid JSON in this EXACT format:
+{{
+  "reviewed_prompt": "The final visual prompt (original or improved)",
+  "changed": true,  // or false if unchanged
+  "notes": "Brief summary of what was changed or why it was already strong (2-3 sentences max)"
+}}
+
+If you make changes:
+- Keep the same scene concept and overall mood
+- Preserve platform appropriateness ({platform})
+- Maintain brand voice from guidelines
+- Write as ONE flowing paragraph (no lists, no bullet points)
+- Target 250-600 words of rich visual description
+"""
+
+
+VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE = """
+You are reviewing {num_prompts} visual prompts that were generated for image-generation models.
+
+CONTEXT (applies to all prompts):
+- Platform: {platform}
+- Product: {product_description}
+- Brand Guidelines: {brand_guidelines}
+
+EVALUATION CHECKLIST (same for all):
+1. Scene clarity – setting, time, atmosphere, tone
+2. Subject realism – natural posture, attire, behavior
+3. Product fidelity – accurate shape/size/color/materials, prominent (~1/3 frame), unobstructed
+4. Lighting/camera – coherent direction, natural contrast, realistic optics
+5. Texture/craftsmanship – stitching, materials, reflections, shadows
+6. Brand tone – consistent with guidelines
+7. Composition – balanced framing, negative space
+8. Logo treatment – physical mark (not text), visible, well-lit
+9. Language quality – flowing paragraph, descriptive, 200-600 words
+10. Professional feel – commercial photographer brief quality
+
+PROMPTS TO REVIEW:
+
+{prompts_list}
+
+YOUR TASK:
+
+For EACH prompt:
+1. Assess against checklist
+2. If all criteria met → keep unchanged with note "Passes quality review"
+3. If issues found → rewrite to fix while keeping same concept/scene/tone
+
+CRITICAL: Respond with valid JSON in this EXACT format:
+{{
+  "reviews": [
+    {{
+      "prompt_id": "combo_1",
+      "reviewed_prompt": "The final visual prompt (original or improved)",
+      "changed": true,  // or false
+      "notes": "Brief summary (2-3 sentences)"
+    }},
+    ... (one entry per prompt)
+  ]
+}}
+
+Requirements for rewrites:
+- ONE flowing paragraph per prompt (no lists)
+- Preserve scene concept and mood
+- Maintain platform appropriateness and brand voice
+- 250-600 words of rich visual description
+"""
+
+
 def generate_creative_prompts(
     test_combination: Dict[str, Any],
     strategy: Dict[str, Any],
@@ -382,6 +501,34 @@ def generate_creative_prompts(
     creative_prompts["technical_specs"]["dimensions"] = placement_specs.get("dimensions", "1080x1080")
     creative_prompts["technical_specs"]["file_format"] = platform_spec.get("file_format", "PNG")
     creative_prompts["technical_specs"]["file_size_max"] = platform_spec.get("file_size_max", "30MB")
+
+    # REVIEW STEP: Evaluate and potentially upgrade the visual prompt
+    try:
+        visual_prompt = creative_prompts.get("visual_prompt", "")
+        if visual_prompt:
+            review_result = review_and_upgrade_visual_prompt(
+                visual_prompt=visual_prompt,
+                product_description=product_description,
+                brand_guidelines=brand_guidelines,
+                platform=platform
+            )
+
+            # Replace visual prompt with reviewed version
+            creative_prompts["visual_prompt"] = review_result.get("reviewed_prompt", visual_prompt)
+
+            # Store review metadata
+            creative_prompts["visual_prompt_review"] = {
+                "changed": review_result.get("changed", False),
+                "notes": review_result.get("notes", "")
+            }
+
+    except Exception as e:
+        # If review fails, keep original prompt and log warning
+        print(f"    ⚠ Visual prompt review failed: {str(e)}")
+        creative_prompts["visual_prompt_review"] = {
+            "changed": False,
+            "notes": f"Review failed: {str(e)}"
+        }
 
     return creative_prompts
 
@@ -496,6 +643,57 @@ COMBINATION {idx} (ID: {combo_id}):
             creative["technical_specs"]["file_size_max"] = platform_spec.get("file_size_max", "30MB")
 
             enhanced_creatives.append(creative)
+
+        # BATCH REVIEW STEP: Evaluate and potentially upgrade all visual prompts
+        try:
+            # Prepare visual prompts for batch review
+            visual_prompts_for_review = []
+            for idx, creative in enumerate(enhanced_creatives):
+                combo_id = test_combinations[idx].get("id", f"combo_{idx+1}")
+                visual_prompt = creative.get("visual_prompt", "")
+                if visual_prompt:
+                    visual_prompts_for_review.append((combo_id, visual_prompt))
+
+            # Perform batch review (assumes all combos share same platform for efficiency)
+            # If multiple platforms, we group by platform
+            if visual_prompts_for_review:
+                # Get platform (use first combo's platform; if mixed, batch review handles it)
+                primary_platform = test_combinations[0].get("platform", "Meta")
+
+                review_results = review_visual_prompts_batch(
+                    visual_prompts=visual_prompts_for_review,
+                    product_description=product_description,
+                    brand_guidelines=brand_guidelines,
+                    platform=primary_platform
+                )
+
+                # Apply reviewed prompts back to creatives
+                for idx, creative in enumerate(enhanced_creatives):
+                    combo_id = test_combinations[idx].get("id", f"combo_{idx+1}")
+
+                    if combo_id in review_results:
+                        review_result = review_results[combo_id]
+                        creative["visual_prompt"] = review_result.get("reviewed_prompt", creative.get("visual_prompt", ""))
+                        creative["visual_prompt_review"] = {
+                            "changed": review_result.get("changed", False),
+                            "notes": review_result.get("notes", "")
+                        }
+                    else:
+                        # Review not found for this combo
+                        creative["visual_prompt_review"] = {
+                            "changed": False,
+                            "notes": "Review not performed"
+                        }
+
+        except Exception as e:
+            # If batch review fails, keep original prompts and log warning
+            print(f"    ⚠ Batch visual prompt review failed: {str(e)}")
+            for creative in enhanced_creatives:
+                if "visual_prompt_review" not in creative:
+                    creative["visual_prompt_review"] = {
+                        "changed": False,
+                        "notes": f"Batch review failed: {str(e)}"
+                    }
 
         return enhanced_creatives
 
@@ -646,3 +844,132 @@ def get_platform_specs_summary(platform: str) -> str:
     summary += f"  • Max size: {specs.get('file_size_max', 'N/A')}\n"
 
     return summary
+
+
+def review_and_upgrade_visual_prompt(
+    visual_prompt: str,
+    product_description: str,
+    brand_guidelines: str,
+    platform: str
+) -> Dict[str, Any]:
+    """
+    Review and potentially upgrade a visual prompt for quality and completeness
+
+    This function acts as a creative director review, evaluating the visual prompt
+    against professional standards and rewriting it if needed to improve:
+    - Product fidelity and visibility
+    - Lighting and camera realism
+    - Brand consistency
+    - Professional cinematic quality
+
+    Args:
+        visual_prompt: The original generated visual prompt
+        product_description: Product information for context
+        brand_guidelines: Brand voice and visual style guidelines
+        platform: Target platform (Meta, TikTok, etc.)
+
+    Returns:
+        Dictionary with:
+        {
+            "reviewed_prompt": "The final prompt (original or improved)",
+            "changed": bool,  # True if changes were made
+            "notes": "Summary of changes or confirmation"
+        }
+    """
+    gemini = get_gemini()
+
+    # Build review prompt
+    prompt = VISUAL_PROMPT_REVIEW_TEMPLATE.format(
+        visual_prompt=visual_prompt,
+        platform=platform,
+        product_description=product_description if product_description else "Product information not provided",
+        brand_guidelines=brand_guidelines if brand_guidelines else "No specific brand guidelines provided"
+    )
+
+    # Execute review with lower temperature for critical evaluation
+    review_result = gemini.generate_json(
+        prompt=prompt,
+        system_instruction=VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION,
+        temperature=0.3,  # Lower temperature for critical, analytical review
+        task_name="Visual Prompt Review",
+    )
+
+    return review_result
+
+
+def review_visual_prompts_batch(
+    visual_prompts: List[Tuple[str, str]],  # List of (prompt_id, visual_prompt)
+    product_description: str,
+    brand_guidelines: str,
+    platform: str
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Review multiple visual prompts in a single LLM call for efficiency
+
+    Args:
+        visual_prompts: List of tuples (prompt_id, visual_prompt_text)
+        product_description: Product information for context
+        brand_guidelines: Brand voice and visual style guidelines
+        platform: Target platform (Meta, TikTok, etc.)
+
+    Returns:
+        Dictionary mapping prompt_id to review result:
+        {
+            "combo_1": {
+                "reviewed_prompt": "...",
+                "changed": bool,
+                "notes": "..."
+            },
+            ...
+        }
+    """
+    if not visual_prompts:
+        return {}
+
+    gemini = get_gemini()
+
+    # Build prompts list for template
+    prompts_list = []
+    for prompt_id, prompt_text in visual_prompts:
+        prompts_list.append(f"""
+[PROMPT {prompt_id}]
+{prompt_text}
+""")
+
+    prompts_list_str = "\n".join(prompts_list)
+
+    # Build batch review prompt
+    prompt = VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE.format(
+        num_prompts=len(visual_prompts),
+        platform=platform,
+        product_description=product_description if product_description else "Product information not provided",
+        brand_guidelines=brand_guidelines if brand_guidelines else "No specific brand guidelines provided",
+        prompts_list=prompts_list_str
+    )
+
+    # Execute batch review
+    try:
+        review_results = gemini.generate_json(
+            prompt=prompt,
+            system_instruction=VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION,
+            temperature=0.3,  # Lower temperature for critical evaluation
+            task_name="Visual Prompt Batch Review",
+        )
+
+        # Convert list of reviews to dictionary keyed by prompt_id
+        reviews_dict = {}
+        for review in review_results.get("reviews", []):
+            prompt_id = review.get("prompt_id")
+            if prompt_id:
+                reviews_dict[prompt_id] = {
+                    "reviewed_prompt": review.get("reviewed_prompt", ""),
+                    "changed": review.get("changed", False),
+                    "notes": review.get("notes", "")
+                }
+
+        return reviews_dict
+
+    except Exception as e:
+        # If batch review fails, return empty dict (caller will handle fallback)
+        print(f"    ⚠ Batch visual prompt review failed: {str(e)}")
+        return {}

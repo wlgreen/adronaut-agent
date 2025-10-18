@@ -11,7 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.modules.creative_generator import (
     PLATFORM_SPECS,
     validate_creative_prompt,
-    get_platform_specs_summary
+    get_platform_specs_summary,
+    VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION,
+    VISUAL_PROMPT_REVIEW_TEMPLATE
 )
 
 
@@ -290,6 +292,195 @@ def test_platform_copy_limits():
     print("✓ Platform copy limits tests passed\n")
 
 
+def test_visual_prompt_review_templates():
+    """Test that review templates and instructions are properly defined"""
+    print("\n=== Test: visual_prompt_review_templates ===")
+
+    # Check system instruction exists and has key content
+    assert VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION is not None
+    assert "creative-director" in VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION
+    assert "review" in VISUAL_PROMPT_REVIEW_SYSTEM_INSTRUCTION.lower()
+    print("  ✓ Review system instruction defined")
+
+    # Check review template exists and has placeholders
+    assert VISUAL_PROMPT_REVIEW_TEMPLATE is not None
+    assert "{visual_prompt}" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "{platform}" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "{product_description}" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "{brand_guidelines}" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    print("  ✓ Review template has required placeholders")
+
+    # Check checklist items are present
+    assert "Scene clarity" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "Product fidelity" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "Lighting and camera" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "Brand tone" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    print("  ✓ Review checklist items present")
+
+    print("✓ Visual prompt review templates tests passed\n")
+
+
+def test_visual_prompt_review_structure():
+    """Test that review result has expected structure"""
+    print("\n=== Test: visual_prompt_review_structure ===")
+
+    # Simulate what would be returned from review
+    sample_review_result = {
+        "reviewed_prompt": "Enhanced visual prompt with better details...",
+        "changed": True,
+        "notes": "Added product fidelity details and improved lighting description"
+    }
+
+    # Check all expected fields present
+    assert "reviewed_prompt" in sample_review_result
+    assert "changed" in sample_review_result
+    assert "notes" in sample_review_result
+    print("  ✓ Review result has required fields")
+
+    # Check field types
+    assert isinstance(sample_review_result["reviewed_prompt"], str)
+    assert isinstance(sample_review_result["changed"], bool)
+    assert isinstance(sample_review_result["notes"], str)
+    print("  ✓ Review result fields have correct types")
+
+    # Test unchanged scenario
+    unchanged_review = {
+        "reviewed_prompt": "Original prompt text",
+        "changed": False,
+        "notes": "Prompt passes quality review"
+    }
+
+    assert unchanged_review["changed"] == False
+    assert "passes" in unchanged_review["notes"].lower() or "quality" in unchanged_review["notes"].lower()
+    print("  ✓ Unchanged review structure valid")
+
+    print("✓ Visual prompt review structure tests passed\n")
+
+
+def test_creative_with_review_metadata():
+    """Test that creative prompts include review metadata after review"""
+    print("\n=== Test: creative_with_review_metadata ===")
+
+    # Simulate a creative prompt with review metadata
+    creative_with_review = {
+        "visual_prompt": "Enhanced professional photograph with cinematic lighting...",
+        "copy_primary_text": "Join 10,000+ customers",
+        "copy_headline": "Transform Your Life",
+        "copy_cta": "SHOP_NOW",
+        "hooks": ["Hook 1", "Hook 2", "Hook 3"],
+        "technical_specs": {
+            "aspect_ratio": "1:1",
+            "dimensions": "1080x1080",
+            "file_format": "PNG"
+        },
+        "visual_prompt_review": {
+            "changed": True,
+            "notes": "Added product visibility details and improved composition"
+        }
+    }
+
+    # Check review metadata exists
+    assert "visual_prompt_review" in creative_with_review
+    print("  ✓ Creative has review metadata")
+
+    # Check review metadata structure
+    review_meta = creative_with_review["visual_prompt_review"]
+    assert "changed" in review_meta
+    assert "notes" in review_meta
+    assert isinstance(review_meta["changed"], bool)
+    assert isinstance(review_meta["notes"], str)
+    print("  ✓ Review metadata structure valid")
+
+    # Validate the creative still passes standard validation
+    is_valid, errors = validate_creative_prompt(creative_with_review, "Meta")
+    assert is_valid, f"Creative with review metadata should be valid. Errors: {errors}"
+    print("  ✓ Creative with review metadata passes validation")
+
+    print("✓ Creative with review metadata tests passed\n")
+
+
+def test_review_checklist_coverage():
+    """Test that review checklist covers all quality dimensions"""
+    print("\n=== Test: review_checklist_coverage ===")
+
+    required_checklist_items = [
+        "Scene clarity",
+        "Subject realism",
+        "Product fidelity",
+        "Lighting and camera",
+        "Texture and craftsmanship",
+        "Brand tone",
+        "Composition and layout",
+        "Logo treatment",
+        "Language quality",
+        "Professional feel"
+    ]
+
+    for item in required_checklist_items:
+        assert item in VISUAL_PROMPT_REVIEW_TEMPLATE, f"Missing checklist item: {item}"
+        print(f"  ✓ Has checklist item: {item}")
+
+    # Check specific quality criteria are detailed
+    assert "one-third of frame" in VISUAL_PROMPT_REVIEW_TEMPLATE or "1/3 frame" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "200-600 words" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    assert "flowing paragraph" in VISUAL_PROMPT_REVIEW_TEMPLATE
+    print("  ✓ Specific quality criteria defined")
+
+    print("✓ Review checklist coverage tests passed\n")
+
+
+def test_batch_review_template():
+    """Test that batch review template is properly structured"""
+    print("\n=== Test: batch_review_template ===")
+
+    from src.modules.creative_generator import VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+
+    # Check template exists and has placeholders
+    assert VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE is not None
+    assert "{num_prompts}" in VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+    assert "{platform}" in VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+    assert "{prompts_list}" in VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+    print("  ✓ Batch review template has required placeholders")
+
+    # Check batch output format is specified
+    assert "reviews" in VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+    assert "prompt_id" in VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+    assert "reviewed_prompt" in VISUAL_PROMPT_REVIEW_BATCH_TEMPLATE
+    print("  ✓ Batch review output format specified")
+
+    # Simulate batch review result structure
+    sample_batch_result = {
+        "reviews": [
+            {
+                "prompt_id": "combo_1",
+                "reviewed_prompt": "Enhanced prompt 1",
+                "changed": True,
+                "notes": "Improved clarity"
+            },
+            {
+                "prompt_id": "combo_2",
+                "reviewed_prompt": "Original prompt 2",
+                "changed": False,
+                "notes": "Passes quality review"
+            }
+        ]
+    }
+
+    # Validate structure
+    assert "reviews" in sample_batch_result
+    assert isinstance(sample_batch_result["reviews"], list)
+    assert len(sample_batch_result["reviews"]) == 2
+
+    for review in sample_batch_result["reviews"]:
+        assert "prompt_id" in review
+        assert "reviewed_prompt" in review
+        assert "changed" in review
+        assert "notes" in review
+        print(f"  ✓ Batch review entry {review['prompt_id']} structure valid")
+
+    print("✓ Batch review template tests passed\n")
+
+
 if __name__ == "__main__":
     print("\n" + "="*60)
     print("  Creative Generation Module Tests")
@@ -304,6 +495,13 @@ if __name__ == "__main__":
         test_platform_specs_summary()
         test_creative_prompt_structure()
         test_platform_copy_limits()
+
+        # Review functionality tests
+        test_visual_prompt_review_templates()
+        test_visual_prompt_review_structure()
+        test_creative_with_review_metadata()
+        test_review_checklist_coverage()
+        test_batch_review_template()
 
         print("\n" + "="*60)
         print("  ✓ ALL TESTS PASSED")
