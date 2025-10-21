@@ -292,12 +292,49 @@ The integration maintains backward compatibility by:
 2. **Optional Features:** New v24.0 features can be opted into via flags
 3. **Graceful Degradation:** Old configs will work but won't use new features
 
+## Recent API Changes (October 2025)
+
+### Messenger Inbox Placement Deprecation (October 9, 2025)
+
+**What Changed:**
+- The `messenger_home` placement is no longer available for ad targeting
+- Announced on October 9, 2025
+
+**Impact:**
+- LOW - This placement was rarely used
+- `destination_type: MESSENGER` still supported for Messenger bot campaigns
+- No code changes required
+
+### Ads Insights API Attribution Windows (Effective January 12, 2026)
+
+**What's Changing:**
+- Meta will remove 7-day view and 28-day view attribution windows from Ads Insights API
+- Announced on October 13, 2025
+- Effective date: January 12, 2026
+
+**Impact:**
+- MEDIUM - Affects reporting only, not campaign creation
+- Current implementation uses 7-day click + 1-day view ✅ (unaffected)
+- If using 7-day view or 28-day view windows, migrate to 1-day view
+
+**Our Implementation:**
+```python
+# Already compliant - uses 7-day click + 1-day view
+data["attribution_spec"] = [
+    {"event_type": "CLICK_THROUGH", "window_days": 7},
+    {"event_type": "VIEW_THROUGH", "window_days": 1}  # Compliant!
+]
+```
+
+No action needed for campaign creation API.
+
 ## Important Notes
 
 1. **API Version Support:** Meta supports each API version for 2 years
 2. **v24.0 Deprecation:** Will be deprecated around October 2027
 3. **v25.0 Breaking Changes:** Prepare for ASC/AAC deprecation in Q1 2026
 4. **Testing:** Always test in sandbox mode before production deployment
+5. **Recent Changes:** Check this section regularly for post-release updates
 
 ## Resources
 

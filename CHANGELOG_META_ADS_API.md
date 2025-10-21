@@ -1,5 +1,19 @@
 # Meta Ads API Integration - Changelog
 
+## [2.0.1] - 2025-10-21
+
+### Documentation Updates
+
+- **Recent API Changes Section**: Added to META_ADS_API_V24_UPDATES.md
+  - Messenger inbox placement deprecation (October 9, 2025)
+  - Ads Insights API attribution window changes (effective January 12, 2026)
+  - Impact analysis and migration guidance
+
+### Notes
+- No code changes required
+- Current implementation already compliant with upcoming attribution changes
+- All updates are informational for awareness
+
 ## [2.0.0] - 2025-10-21
 
 ### Added
