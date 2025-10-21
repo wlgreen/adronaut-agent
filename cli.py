@@ -1042,6 +1042,214 @@ This checklist guides you through creating ads manually in Meta Ads Manager usin
     return md
 
 
+def test_creative_command(args):
+    """Run test creative workflow"""
+    from src.workflows.test_creative_workflow import (
+        run_test_creative_workflow,
+        save_test_creative_results
+    )
+
+    print_banner()
+    print("🎨 TEST CREATIVE WORKFLOW")
+    print("=" * 60)
+    print()
+
+    # Parse keywords if provided
+    required_keywords = None
+    if args.keywords:
+        required_keywords = [k.strip() for k in args.keywords.split(",")]
+
+    # Print input summary
+    print("INPUT SUMMARY:")
+    print(f"  Product: {args.product_description[:100]}{'...' if len(args.product_description) > 100 else ''}")
+    if args.product_image:
+        print(f"  Image: {args.product_image}")
+    print(f"  Platform: {args.platform}")
+    if args.audience:
+        print(f"  Audience: {args.audience}")
+    if args.creative_style:
+        print(f"  Style: {args.creative_style}")
+    if required_keywords:
+        print(f"  Required keywords: {', '.join(required_keywords)}")
+    if args.brand_name:
+        print(f"  Brand name: {args.brand_name}")
+    print()
+
+    # Run workflow
+    try:
+        results = run_test_creative_workflow(
+            product_description=args.product_description,
+            product_image_path=args.product_image,
+            platform=args.platform,
+            audience=args.audience,
+            creative_style=args.creative_style,
+            required_keywords=required_keywords,
+            brand_name=args.brand_name
+        )
+
+        # Display results
+        print()
+        display_test_creative_results(results)
+
+        # Save results
+        output_path = save_test_creative_results(
+            results=results,
+            output_path=args.output
+        )
+
+        print()
+        print("=" * 60)
+        print("  RESULTS SAVED")
+        print("=" * 60)
+        print(f"📄 JSON file: {output_path}")
+        print()
+
+        return 0
+
+    except Exception as e:
+        print()
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def display_test_creative_results(results: dict):
+    """Display test creative workflow results in terminal"""
+
+    print("=" * 60)
+    print("  WORKFLOW RESULTS")
+    print("=" * 60)
+    print()
+
+    summary = results.get("summary", {})
+    steps = results.get("workflow_steps", {})
+
+    # Summary
+    print("SUMMARY:")
+    print(f"  Platform: {summary.get('platform', 'N/A')}")
+    print(f"  Audience: {summary.get('audience', 'N/A')}")
+    print(f"  Creative Style: {summary.get('creative_style', 'N/A')}")
+    print(f"  Prompt Changed in Review: {'Yes' if summary.get('prompt_changed_in_review') else 'No'}")
+    print(f"  Validation Passed: {'Yes ✓' if summary.get('validation_passed') else 'No ✗'}")
+    print(f"  Final Score: {summary.get('final_score', 0)}/100")
+    print()
+
+    # Step 1: Generation
+    step1 = steps.get("step1_generation", {})
+    if step1:
+        print("─" * 60)
+        print("STEP 1: INITIAL GENERATION")
+        print("─" * 60)
+        print(f"Original Prompt Length: {len(step1.get('original_prompt', ''))} chars")
+        print(f"Headline: {step1.get('copy_headline', 'N/A')}")
+        print(f"Primary Text: {step1.get('copy_primary_text', 'N/A')[:100]}...")
+        print(f"CTA: {step1.get('copy_cta', 'N/A')}")
+        print(f"Hooks: {len(step1.get('hooks', []))} hooks generated")
+        print()
+
+    # Step 2: Review
+    step2 = steps.get("step2_review", {})
+    if step2:
+        print("─" * 60)
+        print("STEP 2: PROMPT REVIEW")
+        print("─" * 60)
+        print(f"Reviewed Prompt Length: {len(step2.get('reviewed_prompt', ''))} chars")
+        print(f"Changed: {'Yes' if step2.get('changed') else 'No'}")
+        if step2.get('review_notes'):
+            print(f"Review Notes: {step2.get('review_notes')[:200]}{'...' if len(step2.get('review_notes', '')) > 200 else ''}")
+        print()
+
+    # Step 3: Creative
+    step3 = steps.get("step3_creative", {})
+    if step3:
+        print("─" * 60)
+        print("STEP 3: FINAL CREATIVE OUTPUT")
+        print("─" * 60)
+        print(f"Ready for Image Generation: {'Yes ✓' if step3.get('ready_for_image_generation') else 'No ✗'}")
+
+        validation = step3.get("validation", {})
+        if validation:
+            print(f"Validation Status: {'Passed ✓' if validation.get('is_valid') else 'Failed ✗'}")
+            if validation.get('errors'):
+                print(f"Validation Warnings: {', '.join(validation.get('errors', []))}")
+
+        print()
+        print("FINAL VISUAL PROMPT:")
+        print("─" * 60)
+        prompt_text = step3.get('final_visual_prompt', '')
+        # Display first 500 chars
+        if len(prompt_text) > 500:
+            print(prompt_text[:500] + "...")
+            print(f"[Total length: {len(prompt_text)} chars]")
+        else:
+            print(prompt_text)
+        print()
+
+    # Step 4: Rating
+    step4 = steps.get("step4_rating", {})
+    if step4 and step4.get("success"):
+        print("─" * 60)
+        print("STEP 4: QUALITY RATING")
+        print("─" * 60)
+        print(f"Overall Score: {step4.get('overall_score', 0)}/100")
+        print()
+
+        # Category scores
+        category_scores = step4.get("category_scores", {})
+        if category_scores:
+            print("Category Scores (0-10):")
+            for category, score in category_scores.items():
+                bar = "█" * score + "░" * (10 - score)
+                print(f"  {category.replace('_', ' ').title():25s} {bar} {score}/10")
+            print()
+
+        # Keyword analysis
+        keyword_analysis = step4.get("keyword_analysis", {})
+        if keyword_analysis and not keyword_analysis.get("error"):
+            print("Keyword Analysis:")
+            found = keyword_analysis.get("required_keywords_found", [])
+            missing = keyword_analysis.get("required_keywords_missing", [])
+            if found:
+                print(f"  ✓ Found: {', '.join(found)}")
+            if missing:
+                print(f"  ✗ Missing: {', '.join(missing)}")
+            print()
+
+        # Brand presence
+        brand_presence = step4.get("brand_presence", {})
+        if brand_presence and not brand_presence.get("error"):
+            print("Brand Presence:")
+            print(f"  Brand Mentioned: {'Yes ✓' if brand_presence.get('brand_mentioned') else 'No ✗'}")
+            print(f"  Logo Described: {'Yes ✓' if brand_presence.get('logo_described') else 'No ✗'}")
+            print(f"  Prominence: {brand_presence.get('prominence_level', 'N/A')}")
+            print()
+
+        # Strengths
+        strengths = step4.get("strengths", [])
+        if strengths:
+            print("Strengths:")
+            for strength in strengths:
+                print(f"  ✓ {strength}")
+            print()
+
+        # Weaknesses
+        weaknesses = step4.get("weaknesses", [])
+        if weaknesses:
+            print("Weaknesses:")
+            for weakness in weaknesses:
+                print(f"  ⚠ {weakness}")
+            print()
+
+        # Suggestions
+        suggestions = step4.get("suggestions", [])
+        if suggestions:
+            print("Suggestions for Improvement:")
+            for i, suggestion in enumerate(suggestions, 1):
+                print(f"  {i}. {suggestion}")
+            print()
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
@@ -1061,6 +1269,47 @@ def main():
         "--restart",
         action="store_true",
         help="Force restart flow even if resumption is possible (clears flow state)"
+    )
+
+    # Test creative command
+    test_creative_parser = subparsers.add_parser(
+        "test-creative",
+        help="Test creative generation workflow (generate → review → rate)"
+    )
+    test_creative_parser.add_argument(
+        "--product-description",
+        required=True,
+        help="Description of the product/service to advertise"
+    )
+    test_creative_parser.add_argument(
+        "--product-image",
+        help="Path to product image (optional, for visual context)"
+    )
+    test_creative_parser.add_argument(
+        "--platform",
+        default="Meta",
+        choices=["Meta", "TikTok", "Google"],
+        help="Target advertising platform (default: Meta)"
+    )
+    test_creative_parser.add_argument(
+        "--audience",
+        help="Target audience description (optional)"
+    )
+    test_creative_parser.add_argument(
+        "--creative-style",
+        help="Creative style preference (optional)"
+    )
+    test_creative_parser.add_argument(
+        "--keywords",
+        help="Comma-separated list of required keywords to check for"
+    )
+    test_creative_parser.add_argument(
+        "--brand-name",
+        help="Brand name to check for presence in prompt"
+    )
+    test_creative_parser.add_argument(
+        "--output",
+        help="Custom output file path (default: output/test_creatives/test_creative_<timestamp>.json)"
     )
 
     # Deploy to Meta command
@@ -1102,6 +1351,8 @@ def main():
 
     if args.command == "run":
         return run_command(args)
+    elif args.command == "test-creative":
+        return test_creative_command(args)
     elif args.command == "deploy-to-meta":
         return deploy_to_meta_command(args)
     elif args.command == "export-manual-guide":

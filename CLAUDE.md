@@ -35,6 +35,80 @@ python cli.py run --project-id 8f7a2b1c-4e3d-9a5f-1b2c-3d4e5f6a7b8c
 
 The CLI will prompt for comma-separated file paths. The agent automatically detects file types.
 
+### Test Creative Workflow
+
+The `test-creative` command runs a **local-only** standalone creative generation workflow for testing and experimentation. This workflow requires **no database setup** - it runs entirely locally and outputs JSON files.
+
+**Workflow Steps:**
+1. **Generate**: LLM creates initial creative prompt from product description
+2. **Review**: Automated review and upgrade of prompt quality (10-point checklist)
+3. **Creative**: Final output ready for image generation with validation
+4. **Rate**: LLM-based scoring with keyword analysis, brand presence, prompt adherence
+
+**Usage Examples:**
+
+```bash
+# Basic usage
+python cli.py test-creative \
+  --product-description "Premium wireless headphones with active noise cancellation" \
+  --platform Meta
+
+# With product image and quality checks
+python cli.py test-creative \
+  --product-description "Premium wireless headphones with active noise cancellation" \
+  --product-image /path/to/headphones.jpg \
+  --platform Meta \
+  --keywords "noise cancellation,wireless,premium" \
+  --brand-name "AudioTech" \
+  --creative-style "Aspirational lifestyle"
+
+# Specify audience and output file
+python cli.py test-creative \
+  --product-description "Premium wireless headphones" \
+  --platform TikTok \
+  --audience "Tech enthusiasts 25-40" \
+  --output my_test_results.json
+
+# Test for Google Ads
+python cli.py test-creative \
+  --product-description "Product description here" \
+  --platform Google \
+  --audience "Small business owners"
+```
+
+**Available Platforms:**
+- `Meta` (default) - Feed (1:1), Stories (9:16), Mobile Feed (4:5)
+- `TikTok` - Primary (9:16), Secondary (1:1)
+- `Google` - Responsive (1.91:1), Square (1:1)
+
+**Rating Criteria:**
+The LLM evaluates prompts on 8 categories (0-10 each):
+- Keyword Presence - Required keywords present
+- Brand/Logo Visibility - Brand name and logo clearly described
+- Prompt Adherence - Follows platform/audience/style requirements
+- Visual Clarity - Clear, specific visual description
+- Product Fidelity - Product accurately represented
+- Professional Quality - Cinema-quality language
+- Completeness - All required elements present
+- Authenticity - Platform-appropriate voice
+
+**Output:**
+- **JSON file**: `output/test_creatives/test_creative_<timestamp>.json` (local file only, no database)
+- **Terminal**: Pretty-printed results with scores, strengths, weaknesses, suggestions
+
+**Code Structure:**
+- `src/modules/creative_rater.py` - LLM-based rating with detailed criteria
+- `src/workflows/test_creative_workflow.py` - Orchestrates 4-step workflow (local-only)
+- `cli.py` - `test_creative_command()` and `display_test_creative_results()`
+
+**Shared Implementation:**
+The test workflow reuses existing production components:
+- `src/modules/creative_generator.py` - `generate_creative_prompts()` for step 1
+- `src/modules/creative_generator.py` - `review_and_upgrade_visual_prompt()` for step 2
+- Platform specs and validation from `creative_generator.py`
+
+This ensures the test workflow uses the same generation logic as the main campaign agent, making test results directly applicable to production campaigns.
+
 ## Core Architecture
 
 ### LangGraph Workflow
