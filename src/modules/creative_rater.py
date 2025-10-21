@@ -5,7 +5,7 @@ LLM-based scoring of generated creative prompts against specific criteria.
 """
 
 from typing import Dict, Any, List, Optional
-from src.llm.gemini import call_gemini
+from src.llm.gemini import get_gemini
 
 
 def rate_creative_prompt(
@@ -142,11 +142,11 @@ Return your evaluation as a JSON object with this structure:
 Be specific and reference actual content from the prompt in your analysis."""
 
     # Call LLM for rating
-    response = call_gemini(
-        rating_prompt,
-        task_name="Creative Prompt Rating",
+    gemini = get_gemini()
+    response = gemini.generate_json(
+        prompt=rating_prompt,
         temperature=0.3,  # Analytical evaluation
-        json_response=True
+        task_name="Creative Prompt Rating"
     )
 
     # Parse and validate response
