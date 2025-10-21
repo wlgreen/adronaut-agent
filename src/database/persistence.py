@@ -248,3 +248,160 @@ class CyclePersistence:
         ).order("cycle_num").execute()
 
         return response.data
+
+
+class TestCreativePersistence:
+    """Handle all database operations for test creative results"""
+
+    @staticmethod
+    def save_test_creative(
+        workflow_result: Dict[str, Any],
+        product_description: str,
+        product_image_path: Optional[str] = None,
+        project_id: Optional[str] = None,
+        required_keywords: Optional[List[str]] = None,
+        brand_name: Optional[str] = None
+    ) -> str:
+        """
+        Save test creative workflow results to database.
+
+        Args:
+            workflow_result: Complete workflow result from run_test_creative_workflow
+            product_description: Product description used
+            product_image_path: Path to product image (optional)
+            project_id: Optional project reference
+            required_keywords: Keywords that were checked for
+            brand_name: Brand name that was checked for
+
+        Returns:
+            test_id: UUID of created test creative record
+        """
+        db = get_db()
+
+        # Extract workflow steps
+        steps = workflow_result.get("workflow_steps", {})
+        summary = workflow_result.get("summary", {})
+
+        # Prepare data
+        test_data = {
+            "project_id": project_id,
+            "product_description": product_description,
+            "product_image_path": product_image_path,
+            "platform": summary.get("platform", "Meta"),
+            "audience": summary.get("audience"),
+            "creative_style": summary.get("creative_style"),
+            "step1_generation": steps.get("step1_generation", {}),
+            "step2_review": steps.get("step2_review", {}),
+            "step3_creative": steps.get("step3_creative", {}),
+            "step4_rating": steps.get("step4_rating", {}),
+            "overall_score": summary.get("final_score", 0),
+            "prompt_changed": summary.get("prompt_changed_in_review", False),
+            "validation_passed": summary.get("validation_passed", True),
+            "has_project_context": project_id is not None,
+            "context_metadata": workflow_result.get("metadata", {}),
+            "required_keywords": required_keywords or [],
+            "brand_name": brand_name,
+            "full_result": workflow_result
+        }
+
+        response = db.table("test_creatives").insert(test_data).execute()
+
+        return response.data[0]["test_id"]
+
+    @staticmethod
+    def load_test_creative(test_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load test creative result from database.
+
+        Args:
+            test_id: UUID of the test creative
+
+        Returns:
+            Test creative data as dictionary, or None if not found
+        """
+        db = get_db()
+
+        response = db.table("test_creatives").select("*").eq("test_id", test_id).execute()
+
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+
+        return None
+
+    @staticmethod
+    def get_test_creatives_by_project(project_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all test creatives for a project.
+
+        Args:
+            project_id: UUID of the project
+
+        Returns:
+            List of test creative records
+        """
+        db = get_db()
+
+        response = db.table("test_creatives").select("*").eq(
+            "project_id", project_id
+        ).order("created_at", desc=True).execute()
+
+        return response.data
+
+    @staticmethod
+    def get_test_creatives_by_platform(platform: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get test creatives by platform.
+
+        Args:
+            platform: Platform name (Meta/TikTok/Google)
+            limit: Maximum number of results
+
+        Returns:
+            List of test creative records
+        """
+        db = get_db()
+
+        response = db.table("test_creatives").select("*").eq(
+            "platform", platform
+        ).order("created_at", desc=True).limit(limit).execute()
+
+        return response.data
+
+    @staticmethod
+    def get_top_scoring_creatives(limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get top-scoring test creatives.
+
+        Args:
+            limit: Number of results to return
+
+        Returns:
+            List of top-scoring test creative records
+        """
+        db = get_db()
+
+        response = db.table("test_creatives").select("*").order(
+            "overall_score", desc=True
+        ).limit(limit).execute()
+
+        return response.data
+
+    @staticmethod
+    def get_analytics_summary() -> Dict[str, Any]:
+        """
+        Get analytics summary from the test_creative_analytics view.
+
+        Returns:
+            Dict with analytics by platform
+        """
+        db = get_db()
+
+        response = db.table("test_creative_analytics").select("*").execute()
+
+        # Convert to dict keyed by platform
+        analytics = {}
+        for row in response.data:
+            platform = row.get("platform", "unknown")
+            analytics[platform] = row
+
+        return analytics
