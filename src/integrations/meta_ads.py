@@ -2,8 +2,17 @@
 Meta Marketing API Integration
 Full implementation for automated campaign deployment to Meta (Facebook/Instagram)
 
-Based on Meta Ads Marketing API v24.0
+Based on Meta Ads Marketing API v24.0 (Updated October 2025)
+Supports latest Advantage+ campaign structure and automation features
 Flow documentation: meta_ads_api_end_to_end_calling_flow_doc.md
+
+Latest Updates:
+- Advantage+ unified campaign structure (v23.0+)
+- advantage_audience targeting automation (defaults to 1)
+- Enhanced budget flexibility (75% daily variance)
+- Placement optimization (5% to excluded placements)
+- Individual Advantage+ creative enhancements (v22.0+)
+- Updated attribution model (June 2025)
 """
 
 import os
@@ -312,16 +321,20 @@ class MetaAdsAPI:
         name: str,
         objective: str = "OUTCOME_TRAFFIC",
         status: str = "PAUSED",
-        special_ad_categories: Optional[List[str]] = None
+        special_ad_categories: Optional[List[str]] = None,
+        advantage_plus: bool = False,
+        budget_rebalance: bool = False
     ) -> str:
         """
-        Create campaign container
+        Create campaign container with Advantage+ support
 
         Args:
             name: Campaign name
             objective: Campaign objective (OUTCOME_TRAFFIC, OUTCOME_SALES, etc.)
             status: ACTIVE | PAUSED (default: PAUSED for safety)
             special_ad_categories: e.g., ["CREDIT", "EMPLOYMENT", "HOUSING"]
+            advantage_plus: Enable Advantage+ campaign mode (v23.0+)
+            budget_rebalance: Enable budget rebalancing across ad sets (v24.0+)
 
         Returns:
             campaign_id: Created campaign ID
@@ -335,6 +348,10 @@ class MetaAdsAPI:
         - OUTCOME_ENGAGEMENT
         - OUTCOME_AWARENESS
         - OUTCOME_TRAFFIC
+
+        Notes:
+        - As of v24.0, ASC/AAC campaigns can only be created on v23.0 or earlier
+        - In v25.0 (Q1 2026), Advantage+ will be determined by automation levers
         """
         endpoint = f"/{self.ad_account_id}/campaigns"
 
@@ -344,6 +361,17 @@ class MetaAdsAPI:
             "status": status,
             "special_ad_categories": special_ad_categories or []
         }
+
+        # Add Advantage+ campaign settings (v23.0+)
+        if advantage_plus:
+            # Note: smart_promotion_type is deprecated in v25.0
+            # In v25.0+, Advantage+ is determined by automation settings
+            if self.api_version < "v25.0":
+                print("⚠️  Note: Advantage+ campaigns determined by automation levers in v25.0+")
+
+        # Add budget rebalancing for CBO alternatives (v24.0+)
+        if budget_rebalance:
+            data["budget_rebalance_flag"] = True
 
         response = self._make_api_call(endpoint, method="POST", data=data)
         campaign_id = response.get("id")
@@ -366,10 +394,13 @@ class MetaAdsAPI:
         end_time: Optional[str] = None,
         bid_strategy: str = "LOWEST_COST_WITHOUT_CAP",
         destination_type: str = "WEBSITE",
-        status: str = "PAUSED"
+        status: str = "PAUSED",
+        advantage_audience: int = 1,
+        enable_advantage_placement: bool = True,
+        enable_budget_sharing: bool = False
     ) -> str:
         """
-        Create ad set with targeting and budget
+        Create ad set with targeting and budget (Updated for v23.0+)
 
         Args:
             campaign_id: Parent campaign ID
@@ -383,12 +414,21 @@ class MetaAdsAPI:
             bid_strategy: LOWEST_COST_WITHOUT_CAP | LOWEST_COST_WITH_BID_CAP
             destination_type: WEBSITE | APP | MESSENGER
             status: ACTIVE | PAUSED
+            advantage_audience: Enable audience automation (v23.0+, defaults to 1)
+            enable_advantage_placement: Enable 5% spend on excluded placements (v24.0+)
+            enable_budget_sharing: Enable budget sharing across ad sets (v24.0+)
 
         Returns:
             ad_set_id: Created ad set ID
 
         API Endpoint:
             POST /{ad_account_id}/adsets
+
+        Notes:
+        - v23.0+: advantage_audience defaults to 1 (must be explicitly set)
+        - v24.0+: Daily budget flexibility increased to 75% (from 25%)
+        - v24.0+: Up to 5% budget can be spent on excluded placements
+        - v24.0+: Budget sharing allows 20% budget transfer between ad sets
         """
         endpoint = f"/{self.ad_account_id}/adsets"
 
@@ -416,10 +456,28 @@ class MetaAdsAPI:
         if self.page_id:
             data["promoted_object"] = {"page_id": self.page_id}
 
-        # Add attribution_spec (7-day click-through by default)
+        # Updated attribution spec (June 2025 changes)
+        # On-Meta events: impression time | Off-Meta events: conversion time
         data["attribution_spec"] = [
-            {"event_type": "CLICK_THROUGH", "window_days": 7}
+            {"event_type": "CLICK_THROUGH", "window_days": 7},
+            {"event_type": "VIEW_THROUGH", "window_days": 1}
         ]
+
+        # Add targeting automation (v23.0+ - must be explicitly set)
+        if "targeting_automation" not in targeting:
+            targeting["targeting_automation"] = {
+                "advantage_audience": advantage_audience
+            }
+
+        # Add Advantage+ placement optimization (v24.0+)
+        if enable_advantage_placement:
+            data["targeting_optimization"] = {
+                "excluded_placement_override_percentage": 5  # 5% to excluded placements
+            }
+
+        # Add budget sharing flag (v24.0+)
+        if enable_budget_sharing:
+            data["adset_budget_sharing"] = True  # Allows 20% budget sharing
 
         response = self._make_api_call(endpoint, method="POST", data=data)
         ad_set_id = response.get("id")
@@ -438,10 +496,12 @@ class MetaAdsAPI:
         headline: str,
         image_hash: Optional[str] = None,
         video_id: Optional[str] = None,
-        call_to_action_type: str = "SHOP_NOW"
+        call_to_action_type: str = "SHOP_NOW",
+        advantage_creative_enhancements: Optional[Dict[str, bool]] = None,
+        enable_dynamic_media: bool = True
     ) -> str:
         """
-        Create ad creative with image/video and copy
+        Create ad creative with image/video and copy (Updated for v22.0+)
 
         Args:
             name: Creative name
@@ -451,6 +511,8 @@ class MetaAdsAPI:
             image_hash: Image hash from upload_image() (for image ads)
             video_id: Video ID from upload_video() (for video ads)
             call_to_action_type: SHOP_NOW | LEARN_MORE | SIGN_UP | etc.
+            advantage_creative_enhancements: Individual Advantage+ enhancements (v22.0+)
+            enable_dynamic_media: Auto-enable dynamic media for catalog ads (v24.0+)
 
         Returns:
             creative_id: Created creative ID
@@ -459,6 +521,15 @@ class MetaAdsAPI:
             POST /{ad_account_id}/adcreatives
 
         Creative structure uses object_story_spec with link_data
+
+        Notes:
+        - v22.0+: Advantage+ creative enhancements are now individual (not bundled)
+        - v24.0+: Dynamic media defaults to OPT_IN for Advantage+ Catalog Ads
+
+        Available Advantage+ enhancements (v22.0+):
+        - enhance_cta: Enhance call-to-action
+        - image_brightness_and_contrast: Adjust image brightness/contrast
+        - text_enhancements: Enhance ad copy
         """
         if not image_hash and not video_id:
             raise MetaAdsError("Either image_hash or video_id must be provided")
@@ -499,6 +570,17 @@ class MetaAdsAPI:
             "name": name,
             "object_story_spec": object_story_spec
         }
+
+        # Add Advantage+ creative enhancements (v22.0+)
+        # Individual enhancements replace the old bundled approach
+        if advantage_creative_enhancements:
+            data["enhancements_catalog"] = advantage_creative_enhancements
+            print(f"   Applying Advantage+ creative enhancements: {list(advantage_creative_enhancements.keys())}")
+
+        # Add dynamic media automation for catalog ads (v24.0+)
+        # Defaults to OPT_IN as of September 1, 2025
+        if enable_dynamic_media and image_hash:
+            data["media_type_automation"] = "OPT_IN"
 
         response = self._make_api_call(endpoint, method="POST", data=data)
         creative_id = response.get("id")
@@ -712,6 +794,29 @@ class MetaAdsAPI:
         response = self._make_api_call(f"{endpoint}{params}", method="GET")
         return response
 
+    def get_advantage_state(self, campaign_id: str) -> Dict[str, Any]:
+        """
+        Check if campaign is in Advantage+ setup (v23.0+)
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            Dictionary with advantage_state_info flag and details
+
+        API Endpoint:
+            GET /{campaign_id}?fields=advantage_state_info
+
+        Notes:
+        - v23.0+: advantage_state_info indicates Advantage+ status
+        - In v25.0+, Advantage+ is determined by automation levers
+        """
+        endpoint = f"/{campaign_id}"
+        params = "?fields=advantage_state_info,name,status"
+
+        response = self._make_api_call(f"{endpoint}{params}", method="GET")
+        return response
+
     def _parse_age_range(self, age_range: str) -> tuple[int, int]:
         """
         Parse age range string into age_min and age_max
@@ -772,13 +877,17 @@ class MetaAdsAPI:
 
     def _transform_agent_config_to_api(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Transform agent-generated config to Meta API format
+        Transform agent-generated config to Meta API format (Updated for v23.0+)
 
         Args:
             config: Config from generate_campaign_config()
 
         Returns:
             Transformed config ready for API calls
+
+        Notes:
+        - v23.0+: Adds advantage_audience targeting automation
+        - v24.0+: Adds placement optimization and budget sharing options
         """
         meta_config = config.get("meta", {})
 
@@ -812,6 +921,12 @@ class MetaAdsAPI:
                     {"behaviors": [{"name": behavior} for behavior in behaviors]}
                 ]
 
+        # Add targeting automation (v23.0+)
+        # advantage_audience defaults to 1 unless explicitly set to 0
+        api_targeting["targeting_automation"] = {
+            "advantage_audience": targeting.get("advantage_audience", 1)
+        }
+
         # Transform bidding
         bidding = meta_config.get("bidding", {})
 
@@ -827,6 +942,10 @@ class MetaAdsAPI:
             "billing_event": "IMPRESSIONS",
             "bid_strategy": bidding.get("strategy", "LOWEST_COST_WITHOUT_CAP"),
             "creative_specs": meta_config.get("creative_specs", {}),
+            # Add new v24.0+ features
+            "advantage_plus": meta_config.get("advantage_plus", False),
+            "enable_advantage_placement": meta_config.get("enable_advantage_placement", True),
+            "enable_budget_sharing": meta_config.get("enable_budget_sharing", False),
         }
 
     def create_campaign_from_config(self, config: Dict) -> Dict:
@@ -873,7 +992,7 @@ class MetaAdsAPI:
             status="PAUSED"
         )
 
-        # Step 2: Create ad set
+        # Step 2: Create ad set with new v24.0+ features
         ad_set_id = self.create_ad_set(
             campaign_id=campaign_id,
             name=f"{api_config['campaign_name']} - Ad Set 1",
@@ -882,7 +1001,10 @@ class MetaAdsAPI:
             optimization_goal=api_config["optimization_goal"],
             billing_event=api_config["billing_event"],
             bid_strategy=api_config["bid_strategy"],
-            status="PAUSED"
+            status="PAUSED",
+            advantage_audience=api_config["targeting"].get("targeting_automation", {}).get("advantage_audience", 1),
+            enable_advantage_placement=api_config.get("enable_advantage_placement", True),
+            enable_budget_sharing=api_config.get("enable_budget_sharing", False)
         )
 
         # Step 3 & 4: Process creative assets

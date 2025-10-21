@@ -269,7 +269,8 @@ class TestMetaAdsAPI(unittest.TestCase):
         # Assertions
         self.assertEqual(image_hash, "url_hash_xyz")
         call_args = mock_request.call_args
-        self.assertEqual(call_args[1]["data"]["url"], "https://source.com/image.jpg")
+        # URL upload uses json parameter in _make_api_call (not data)
+        self.assertEqual(call_args[1]["json"]["url"], "https://source.com/image.jpg")
 
     def test_upload_image_no_params(self):
         """Test image upload without parameters raises error"""
