@@ -171,7 +171,7 @@ Each hook should stand alone and sound like something a real person would say to
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CRITICAL: Respond with valid JSON in this EXACT format:
+CRITICAL: Respond with valid JSON in this EXACT format (no comments, no extra text):
 {{
   "visual_prompt": "Your detailed image generation prompt...",
   "copy_primary_text": "Natural-sounding main ad copy",
@@ -193,6 +193,8 @@ CRITICAL: Respond with valid JSON in this EXACT format:
     "color_scheme": "#FF5733 (primary), #FFFFFF (text)"
   }}
 }}
+
+Note: All fields are required. Provide exactly 5 hooks in the array.
 """
 
 
@@ -261,7 +263,7 @@ IMPORTANT:
 • Respect each platform's native language (TikTok = casual, Meta = aspirational, Google = direct)
 • Avoid generic claims, corporate jargon, and overused patterns
 
-RESPONSE FORMAT (valid JSON):
+RESPONSE FORMAT (valid JSON - no comments, no extra text):
 {{
   "creatives": [
     {{
@@ -286,9 +288,10 @@ RESPONSE FORMAT (valid JSON):
         "color_scheme": "color codes"
       }}
     }}
-    ... (repeat for all {num_combinations} combinations)
   ]
 }}
+
+IMPORTANT: Include exactly {num_combinations} creative objects in the "creatives" array.
 """
 
 
@@ -343,12 +346,14 @@ YOUR TASK:
 2. If all criteria are met → return it unchanged with note "Prompt passes quality review"
 3. If any item is missing or weak → rewrite the paragraph to fix issues while keeping the same concept, scene, and tone
 
-CRITICAL: Respond with valid JSON in this EXACT format:
+CRITICAL: Respond with valid JSON in this EXACT format (no comments, no extra text):
 {{
   "reviewed_prompt": "The final visual prompt (original or improved)",
-  "changed": true,  // or false if unchanged
+  "changed": true,
   "notes": "Brief summary of what was changed or why it was already strong (2-3 sentences max)"
 }}
+
+Note: The "changed" field should be true if you made improvements, or false if the prompt was already excellent.
 
 If you make changes:
 - Keep the same scene concept and overall mood
@@ -390,18 +395,25 @@ For EACH prompt:
 2. If all criteria met → keep unchanged with note "Passes quality review"
 3. If issues found → rewrite to fix while keeping same concept/scene/tone
 
-CRITICAL: Respond with valid JSON in this EXACT format:
+CRITICAL: Respond with valid JSON in this EXACT format (no comments, no extra text):
 {{
   "reviews": [
     {{
       "prompt_id": "combo_1",
       "reviewed_prompt": "The final visual prompt (original or improved)",
-      "changed": true,  // or false
+      "changed": true,
       "notes": "Brief summary (2-3 sentences)"
     }},
-    ... (one entry per prompt)
+    {{
+      "prompt_id": "combo_2",
+      "reviewed_prompt": "The final visual prompt (original or improved)",
+      "changed": false,
+      "notes": "Brief summary (2-3 sentences)"
+    }}
   ]
 }}
+
+Note: Include one review object per prompt. The "changed" field should be true or false (boolean).
 
 Requirements for rewrites:
 - ONE flowing paragraph per prompt (no lists)
@@ -956,9 +968,24 @@ def review_visual_prompts_batch(
             task_name="Visual Prompt Batch Review",
         )
 
+        # Validate response structure
+        if not isinstance(review_results, dict):
+            raise ValueError(f"Expected dict response, got {type(review_results)}")
+
+        if "reviews" not in review_results:
+            raise ValueError(f"Response missing 'reviews' key. Keys found: {list(review_results.keys())}")
+
+        reviews_list = review_results.get("reviews", [])
+        if not isinstance(reviews_list, list):
+            raise ValueError(f"Expected 'reviews' to be a list, got {type(reviews_list)}")
+
         # Convert list of reviews to dictionary keyed by prompt_id
         reviews_dict = {}
-        for review in review_results.get("reviews", []):
+        for idx, review in enumerate(reviews_list):
+            if not isinstance(review, dict):
+                print(f"    ⚠ Review {idx} is not a dict, skipping")
+                continue
+
             prompt_id = review.get("prompt_id")
             if prompt_id:
                 reviews_dict[prompt_id] = {
@@ -966,10 +993,17 @@ def review_visual_prompts_batch(
                     "changed": review.get("changed", False),
                     "notes": review.get("notes", "")
                 }
+            else:
+                print(f"    ⚠ Review {idx} missing prompt_id, skipping")
 
         return reviews_dict
 
+    except ValueError as e:
+        # JSON parsing or validation error
+        error_msg = str(e)
+        print(f"    ⚠ Batch visual prompt review failed (JSON error): {error_msg[:200]}")
+        return {}
     except Exception as e:
-        # If batch review fails, return empty dict (caller will handle fallback)
-        print(f"    ⚠ Batch visual prompt review failed: {str(e)}")
+        # Other errors
+        print(f"    ⚠ Batch visual prompt review failed (unexpected error): {str(e)[:200]}")
         return {}

@@ -111,7 +111,13 @@ class GeminiClient:
         except json.JSONDecodeError as e:
             if tracker:
                 tracker.log_message(f"JSON parse error: {str(e)}", "error")
-            raise ValueError(f"Failed to parse JSON response: {e}\n\nResponse: {text}")
+                # Show more context: first 500 chars and position of error
+                error_pos = getattr(e, 'pos', 0)
+                context_start = max(0, error_pos - 100)
+                context_end = min(len(text), error_pos + 100)
+                context = text[context_start:context_end]
+                tracker.log_message(f"Error context: ...{context}...", "error")
+            raise ValueError(f"Failed to parse JSON response: {e}\n\nResponse preview: {text[:500]}...")
 
     def generate_text(
         self,
