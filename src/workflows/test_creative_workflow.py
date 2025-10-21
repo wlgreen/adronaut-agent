@@ -243,6 +243,93 @@ def run_test_creative_workflow(
         }
 
     # ============================================
+    # STEP 5: Generate Image from Prompt
+    # ============================================
+    tracker.log_message("STEP 5: Generating image from visual prompt...", level="info")
+
+    try:
+        from src.llm.gemini import get_gemini
+        gemini = get_gemini()
+
+        # Get aspect ratio from technical specs
+        aspect_ratio = step3_result["technical_specs"].get("aspect_ratio", "1:1")
+
+        image_result = gemini.generate_image(
+            prompt=step3_result["final_visual_prompt"],
+            aspect_ratio=aspect_ratio,
+            task_name="Creative Image Generation"
+        )
+
+        step5_result = {
+            "success": image_result["success"],
+            "image_path": image_result.get("image_path"),
+            "model": image_result.get("model"),
+            "aspect_ratio": aspect_ratio,
+            "error": image_result.get("error")
+        }
+
+        if step5_result["success"]:
+            tracker.log_message(f"✓ Image generated: {step5_result['image_path']}")
+        else:
+            tracker.log_message(f"✗ Image generation failed: {step5_result['error']}", level="error")
+
+    except Exception as e:
+        tracker.log_message(f"✗ Image generation failed: {str(e)}", level="error")
+        step5_result = {
+            "success": False,
+            "image_path": None,
+            "error": str(e)
+        }
+
+    # ============================================
+    # STEP 6: Review/Rate Generated Image
+    # ============================================
+    tracker.log_message("STEP 6: Reviewing and rating generated image...", level="info")
+
+    step6_result = {}
+
+    if step5_result["success"] and step5_result["image_path"]:
+        try:
+            from src.modules.creative_rater import rate_generated_image
+
+            image_rating = rate_generated_image(
+                image_path=step5_result["image_path"],
+                original_prompt=step3_result["final_visual_prompt"],
+                product_description=product_description,
+                platform=platform,
+                required_keywords=required_keywords,
+                brand_name=brand_name
+            )
+
+            step6_result = {
+                "success": True,
+                "overall_score": image_rating.get("overall_score", 0),
+                "category_scores": image_rating.get("category_scores", {}),
+                "prompt_match_details": image_rating.get("prompt_match_details", {}),
+                "strengths": image_rating.get("strengths", []),
+                "weaknesses": image_rating.get("weaknesses", []),
+                "suggestions": image_rating.get("suggestions", []),
+                "full_rating": image_rating
+            }
+
+            tracker.log_message(f"✓ Image rating complete: {step6_result['overall_score']}/100")
+
+        except Exception as e:
+            tracker.log_message(f"✗ Image rating failed: {str(e)}", level="error")
+            step6_result = {
+                "success": False,
+                "error": str(e),
+                "overall_score": 0
+            }
+    else:
+        tracker.log_message("⚠ Skipping image review (no image generated)", level="warning")
+        step6_result = {
+            "success": False,
+            "skipped": True,
+            "reason": "No image generated"
+        }
+
+    # ============================================
     # Compile Final Results
     # ============================================
     tracker.log_message("Workflow complete!", level="success")
@@ -253,7 +340,9 @@ def run_test_creative_workflow(
             "step1_generation": step1_result,
             "step2_review": step2_result,
             "step3_creative": step3_result,
-            "step4_rating": step4_result
+            "step4_rating": step4_result,
+            "step5_image_generation": step5_result,
+            "step6_image_rating": step6_result
         },
         "summary": {
             "platform": platform,
@@ -261,7 +350,10 @@ def run_test_creative_workflow(
             "creative_style": creative_style,
             "prompt_changed_in_review": step2_result["changed"],
             "final_score": step4_result.get("overall_score", 0),
-            "validation_passed": step3_result["validation"]["is_valid"]
+            "validation_passed": step3_result["validation"]["is_valid"],
+            "image_generated": step5_result.get("success", False),
+            "image_path": step5_result.get("image_path"),
+            "image_score": step6_result.get("overall_score", 0)
         },
         "metadata": metadata
     }

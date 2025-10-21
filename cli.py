@@ -1249,6 +1249,76 @@ def display_test_creative_results(results: dict):
                 print(f"  {i}. {suggestion}")
             print()
 
+    # Step 5: Image Generation
+    step5 = steps.get("step5_image_generation", {})
+    if step5:
+        print("─" * 60)
+        print("STEP 5: IMAGE GENERATION")
+        print("─" * 60)
+        if step5.get("success"):
+            print(f"✓ Image Generated Successfully")
+            print(f"Path: {step5.get('image_path')}")
+            print(f"Model: {step5.get('model')}")
+            print(f"Aspect Ratio: {step5.get('aspect_ratio')}")
+        else:
+            print(f"✗ Image Generation Failed")
+            print(f"Error: {step5.get('error', 'Unknown error')}")
+        print()
+
+    # Step 6: Image Rating
+    step6 = steps.get("step6_image_rating", {})
+    if step6 and step6.get("success"):
+        print("─" * 60)
+        print("STEP 6: IMAGE QUALITY RATING")
+        print("─" * 60)
+        print(f"Overall Score: {step6.get('overall_score', 0)}/100")
+        print()
+
+        # Category scores
+        category_scores = step6.get("category_scores", {})
+        if category_scores:
+            print("Category Scores (0-10):")
+            for category, score in category_scores.items():
+                bar = "█" * score + "░" * (10 - score)
+                print(f"  {category.replace('_', ' ').title():25s} {bar} {score}/10")
+            print()
+
+        # Prompt match details
+        prompt_match = step6.get("prompt_match_details", {})
+        if prompt_match:
+            print("Prompt Match Analysis:")
+            matched = prompt_match.get("matched_elements", [])
+            missing = prompt_match.get("missing_elements", [])
+            if matched:
+                print(f"  ✓ Matched: {', '.join(matched[:3])}")
+            if missing:
+                print(f"  ✗ Missing: {', '.join(missing[:3])}")
+            print()
+
+        # Strengths
+        strengths = step6.get("strengths", [])
+        if strengths:
+            print("Image Strengths:")
+            for strength in strengths:
+                print(f"  ✓ {strength}")
+            print()
+
+        # Weaknesses
+        weaknesses = step6.get("weaknesses", [])
+        if weaknesses:
+            print("Image Weaknesses:")
+            for weakness in weaknesses:
+                print(f"  ⚠ {weakness}")
+            print()
+
+        # Suggestions
+        suggestions = step6.get("suggestions", [])
+        if suggestions:
+            print("Suggestions for Improvement:")
+            for i, suggestion in enumerate(suggestions, 1):
+                print(f"  {i}. {suggestion}")
+            print()
+
 
 def main():
     """Main CLI entry point"""
