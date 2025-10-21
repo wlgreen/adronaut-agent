@@ -1267,56 +1267,67 @@ def display_test_creative_results(results: dict):
 
     # Step 6: Image Rating
     step6 = steps.get("step6_image_rating", {})
-    if step6 and step6.get("success"):
+    if step6:
         print("─" * 60)
         print("STEP 6: IMAGE QUALITY RATING")
         print("─" * 60)
-        print(f"Overall Score: {step6.get('overall_score', 0)}/100")
-        print()
 
-        # Category scores
-        category_scores = step6.get("category_scores", {})
-        if category_scores:
-            print("Category Scores (0-10):")
-            for category, score in category_scores.items():
-                bar = "█" * score + "░" * (10 - score)
-                print(f"  {category.replace('_', ' ').title():25s} {bar} {score}/10")
+        if step6.get("success"):
+            print(f"Overall Score: {step6.get('overall_score', 0)}/100")
             print()
 
-        # Prompt match details
-        prompt_match = step6.get("prompt_match_details", {})
-        if prompt_match:
-            print("Prompt Match Analysis:")
-            matched = prompt_match.get("matched_elements", [])
-            missing = prompt_match.get("missing_elements", [])
-            if matched:
-                print(f"  ✓ Matched: {', '.join(matched[:3])}")
-            if missing:
-                print(f"  ✗ Missing: {', '.join(missing[:3])}")
-            print()
+            # Category scores
+            category_scores = step6.get("category_scores", {})
+            if category_scores:
+                print("Category Scores (0-10):")
+                for category, score in category_scores.items():
+                    bar = "█" * score + "░" * (10 - score)
+                    print(f"  {category.replace('_', ' ').title():25s} {bar} {score}/10")
+                print()
 
-        # Strengths
-        strengths = step6.get("strengths", [])
-        if strengths:
-            print("Image Strengths:")
-            for strength in strengths:
-                print(f"  ✓ {strength}")
-            print()
+            # Prompt match details
+            prompt_match = step6.get("prompt_match_details", {})
+            if prompt_match:
+                print("Prompt Match Analysis:")
+                matched = prompt_match.get("matched_elements", [])
+                missing = prompt_match.get("missing_elements", [])
+                if matched:
+                    print(f"  ✓ Matched: {', '.join(matched[:3])}")
+                if missing:
+                    print(f"  ✗ Missing: {', '.join(missing[:3])}")
+                print()
 
-        # Weaknesses
-        weaknesses = step6.get("weaknesses", [])
-        if weaknesses:
-            print("Image Weaknesses:")
-            for weakness in weaknesses:
-                print(f"  ⚠ {weakness}")
-            print()
+            # Strengths
+            strengths = step6.get("strengths", [])
+            if strengths:
+                print("Image Strengths:")
+                for strength in strengths:
+                    print(f"  ✓ {strength}")
+                print()
 
-        # Suggestions
-        suggestions = step6.get("suggestions", [])
-        if suggestions:
-            print("Suggestions for Improvement:")
-            for i, suggestion in enumerate(suggestions, 1):
-                print(f"  {i}. {suggestion}")
+            # Weaknesses
+            weaknesses = step6.get("weaknesses", [])
+            if weaknesses:
+                print("Image Weaknesses:")
+                for weakness in weaknesses:
+                    print(f"  ⚠ {weakness}")
+                print()
+
+            # Suggestions
+            suggestions = step6.get("suggestions", [])
+            if suggestions:
+                print("Suggestions for Improvement:")
+                for i, suggestion in enumerate(suggestions, 1):
+                    print(f"  {i}. {suggestion}")
+                print()
+        elif step6.get("skipped"):
+            print(f"⚠ Image Review Skipped")
+            print(f"Reason: {step6.get('reason', 'Unknown')}")
+            print()
+        else:
+            # Failed
+            print(f"✗ Image Review Failed")
+            print(f"Error: {step6.get('error', 'Unknown error')}")
             print()
 
 
