@@ -313,3 +313,52 @@ def _get_default_field_value(field_name: str) -> Any:
         "suggestions": []
     }
     return defaults.get(field_name, {})
+
+
+def rate_generated_image(
+    image_path: str,
+    original_prompt: str,
+    product_description: str,
+    platform: str,
+    required_keywords: Optional[List[str]] = None,
+    brand_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Rate a generated image using Gemini Vision.
+
+    Args:
+        image_path: Path to generated image
+        original_prompt: Original text prompt used for generation
+        product_description: Product description for context
+        platform: Target platform (Meta/TikTok/Google)
+        required_keywords: Keywords to check for in image
+        brand_name: Brand name to check for presence
+
+    Returns:
+        Dict with:
+        - overall_score: 0-100
+        - category_scores: Dict of 6 category scores (0-10 each)
+        - prompt_match_details: Analysis of prompt adherence
+        - strengths: List of identified strengths
+        - weaknesses: List of identified weaknesses
+        - suggestions: List of improvement suggestions
+    """
+    from src.llm.gemini import get_gemini
+
+    gemini = get_gemini()
+
+    # Build criteria dict for review
+    criteria = {
+        "platform": platform,
+        "product_description": product_description,
+        "required_keywords": required_keywords,
+        "brand_name": brand_name
+    }
+
+    # Use Gemini's review_image method
+    return gemini.review_image(
+        image_path=image_path,
+        original_prompt=original_prompt,
+        criteria=criteria,
+        task_name="Generated Image Rating"
+    )

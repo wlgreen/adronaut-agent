@@ -207,6 +207,226 @@ class GeminiClient:
 
         return response.text.strip()
 
+    def generate_image(
+        self,
+        prompt: str,
+        aspect_ratio: str = "1:1",
+        task_name: str = "Image Generation"
+    ) -> Dict[str, Any]:
+        """
+        Generate image using Gemini 2.5 Flash Image
+
+        Args:
+            prompt: Visual prompt for image generation
+            aspect_ratio: "1:1", "16:9", "9:16", "4:5"
+            task_name: Task name for logging
+
+        Returns:
+            {
+                "success": True,
+                "image_data": base64_string,
+                "image_path": "output/test_creatives/images/test_creative_<timestamp>.png",
+                "model": "gemini-2.5-flash-image",
+                "error": None
+            }
+        """
+        from pathlib import Path
+        from datetime import datetime
+        import base64
+
+        tracker = _get_progress_tracker()
+
+        # Map aspect ratios to dimensions
+        dimensions_map = {
+            "1:1": "1024x1024",
+            "16:9": "1792x1024",
+            "9:16": "1024x1792",
+            "4:5": "1024x1280"
+        }
+
+        try:
+            if tracker:
+                tracker.log_message(f"🎨 Generating image with {aspect_ratio} aspect ratio...", "info")
+
+            # Use gemini-2.5-flash-image model
+            image_model = genai.GenerativeModel("gemini-2.5-flash-image")
+
+            # Generate image
+            response = image_model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    candidate_count=1,
+                )
+            )
+
+            # Extract image data (response will contain image bytes)
+            image_data = response.candidates[0].content.parts[0].inline_data.data
+
+            # Save to file
+            output_dir = Path("output/test_creatives/images")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            image_path = output_dir / f"test_creative_{timestamp}.png"
+
+            # Decode and save
+            with open(image_path, "wb") as f:
+                f.write(base64.b64decode(image_data))
+
+            if tracker:
+                tracker.log_message(f"✓ Image saved: {image_path}", "success")
+
+            return {
+                "success": True,
+                "image_data": image_data,
+                "image_path": str(image_path),
+                "model": "gemini-2.5-flash-image",
+                "error": None
+            }
+
+        except Exception as e:
+            if tracker:
+                tracker.log_message(f"✗ Image generation failed: {str(e)}", "error")
+
+            return {
+                "success": False,
+                "image_data": None,
+                "image_path": None,
+                "model": "gemini-2.5-flash-image",
+                "error": str(e)
+            }
+
+    def review_image(
+        self,
+        image_path: str,
+        original_prompt: str,
+        criteria: Dict[str, Any],
+        task_name: str = "Image Review"
+    ) -> Dict[str, Any]:
+        """
+        Review generated image using Gemini Vision
+
+        Args:
+            image_path: Path to generated image
+            original_prompt: Original text prompt used for generation
+            criteria: Review criteria dict with platform, product_description, etc.
+            task_name: Task name for logging
+
+        Returns:
+            {
+                "overall_score": 85,
+                "category_scores": {
+                    "visual_quality": 9,
+                    "prompt_adherence": 8,
+                    "product_visibility": 9,
+                    "brand_presence": 7,
+                    "platform_fit": 8,
+                    "technical_quality": 9
+                },
+                "strengths": [...],
+                "weaknesses": [...],
+                "suggestions": [...]
+            }
+        """
+        import PIL.Image
+
+        tracker = _get_progress_tracker()
+
+        if tracker:
+            tracker.log_message(f"🔍 Reviewing generated image...", "info")
+
+        try:
+            # Read image
+            image = PIL.Image.open(image_path)
+
+            # Build review prompt
+            review_prompt = f"""You are an expert creative director reviewing an AI-generated advertising image.
+
+ORIGINAL TEXT PROMPT:
+{original_prompt}
+
+EVALUATION CRITERIA (rate each 0-10):
+1. Visual Quality - Composition, lighting, color, professionalism
+2. Prompt Adherence - How well does image match the text prompt?
+3. Product Visibility - Is product clearly shown (~1/3 of frame)?
+4. Brand Presence - Logo/brand visible and prominent as described?
+5. Platform Fit - Appropriate for {criteria.get('platform', 'social media')} ads?
+6. Technical Quality - Resolution, clarity, no artifacts or distortions
+
+YOUR TASK:
+Analyze the image and provide:
+1. OVERALL SCORE (0-100): Holistic quality for advertising use
+2. CATEGORY SCORES: Rate each of 6 criteria (0-10)
+3. STRENGTHS: List 2-3 key strengths
+4. WEAKNESSES: List 2-3 areas for improvement
+5. SUGGESTIONS: Provide 2-3 specific suggestions to improve
+
+Return as JSON:
+{{
+    "overall_score": 85,
+    "category_scores": {{
+        "visual_quality": 9,
+        "prompt_adherence": 8,
+        "product_visibility": 9,
+        "brand_presence": 7,
+        "platform_fit": 8,
+        "technical_quality": 9
+    }},
+    "prompt_match_details": {{
+        "matched_elements": ["element1", "element2"],
+        "missing_elements": ["element3"],
+        "extra_elements": ["unexpected1"]
+    }},
+    "strengths": ["Strength 1", "Strength 2"],
+    "weaknesses": ["Weakness 1", "Weakness 2"],
+    "suggestions": ["Suggestion 1", "Suggestion 2"]
+}}"""
+
+            # Use vision model (current Gemini model for vision)
+            vision_model = genai.GenerativeModel("gemini-2.0-flash-exp")
+
+            response = vision_model.generate_content(
+                [review_prompt, image],
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    candidate_count=1,
+                )
+            )
+
+            # Parse JSON response
+            result_text = response.text.strip()
+
+            # Remove markdown code blocks if present
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+
+            result_text = result_text.strip()
+            result = json.loads(result_text)
+
+            if tracker:
+                tracker.log_message(f"✓ Image review complete: {result.get('overall_score', 0)}/100", "success")
+
+            return result
+
+        except Exception as e:
+            if tracker:
+                tracker.log_message(f"✗ Image review failed: {str(e)}", "error")
+
+            return {
+                "overall_score": 0,
+                "category_scores": {},
+                "prompt_match_details": {},
+                "strengths": [],
+                "weaknesses": [f"Review failed: {str(e)}"],
+                "suggestions": [],
+                "error": str(e)
+            }
+
 
 # Singleton instance
 _gemini_client: Optional[GeminiClient] = None
