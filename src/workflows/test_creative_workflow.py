@@ -139,7 +139,8 @@ def run_test_creative_workflow(
         # Review the visual prompt
         review_result = review_and_upgrade_visual_prompt(
             visual_prompt=step1_result["original_prompt"],
-            combo_id="test_combo_1",
+            product_description=product_description,
+            brand_guidelines="",  # Empty for test workflow - can be added via CLI if needed
             platform=platform
         )
 
