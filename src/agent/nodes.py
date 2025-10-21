@@ -54,21 +54,33 @@ def track_node(func):
 
             # Auto-save state after each node (except save_state_node to avoid double-save)
             if node_name != "save_state" and result.get("project_id"):
+                save_succeeded = False
+                last_save_error = None
+
                 try:
                     project_data = state_to_project_dict(result, include_knowledge_facts=True)
                     ProjectPersistence.save_project(project_data)
                     tracker.log_message(f"✓ Auto-saved state after {node_name}", "info")
+                    save_succeeded = True
                 except Exception as save_error:
+                    last_save_error = save_error
                     # Try without knowledge_facts if schema not updated
                     if "knowledge_facts" in str(save_error):
                         try:
                             project_data = state_to_project_dict(result, include_knowledge_facts=False)
                             ProjectPersistence.save_project(project_data)
                             tracker.log_message(f"✓ Auto-saved state after {node_name} (without knowledge_facts)", "info")
+                            save_succeeded = True
                         except Exception as retry_error:
-                            tracker.log_message(f"⚠ Auto-save failed: {str(retry_error)}", "warning")
-                    else:
-                        tracker.log_message(f"⚠ Auto-save failed: {str(save_error)}", "warning")
+                            last_save_error = retry_error
+
+                # If save failed, add to errors and mark flow as having issues
+                if not save_succeeded:
+                    error_msg = f"CRITICAL: State auto-save failed after {node_name}: {str(last_save_error)}"
+                    result["errors"].append(error_msg)
+                    tracker.log_message(f"❌ {error_msg}", "error")
+                    # Mark state as potentially inconsistent
+                    result["state_save_failed"] = True
 
             return result
 
@@ -78,13 +90,24 @@ def track_node(func):
             state["current_executing_node"] = None
             state["errors"].append(f"{node_name} failed: {str(e)}")
 
-            # Try to save failed state
+            # Try to save failed state - this is critical for resumption
+            save_succeeded = False
             try:
                 project_data = state_to_project_dict(state, include_knowledge_facts=False)
                 ProjectPersistence.save_project(project_data)
                 tracker.log_message(f"✓ Saved failed state after {node_name}", "info")
+                save_succeeded = True
             except Exception as save_error:
-                tracker.log_message(f"⚠ Failed to save error state: {str(save_error)}", "warning")
+                error_msg = f"CRITICAL: Failed to save error state after {node_name}: {str(save_error)}"
+                tracker.log_message(f"❌ {error_msg}", "error")
+                state["errors"].append(error_msg)
+
+            if not save_succeeded:
+                tracker.log_message(
+                    f"⚠️  WARNING: State may be lost! Node '{node_name}' failed AND state save failed. "
+                    f"Manual intervention may be required.",
+                    "error"
+                )
 
             # Re-raise the original error
             raise e

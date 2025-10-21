@@ -6,6 +6,8 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import uuid
 from .client import get_db
+from ..utils.retry import retry, is_retryable_error
+from .persistence import DatabaseError
 
 
 class FilePersistence:
@@ -165,6 +167,7 @@ class FilePersistence:
         ).execute()
 
     @staticmethod
+    @retry(max_attempts=3, exceptions=(Exception,), base_delay=2.0)
     def upsert_file_record(
         project_id: str,
         storage_path: str,
@@ -174,7 +177,7 @@ class FilePersistence:
         insights_cache: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Insert or update a file record
+        Insert or update a file record with retry logic
 
         Args:
             project_id: UUID of the project
@@ -186,31 +189,56 @@ class FilePersistence:
 
         Returns:
             file_id: UUID of record
+
+        Raises:
+            DatabaseError: If database operation fails after retries
         """
-        db = get_db()
+        try:
+            db = get_db()
 
-        # Check if exists
-        existing = FilePersistence.get_file_record(project_id, storage_path)
+            # Check if exists
+            existing = FilePersistence.get_file_record(project_id, storage_path)
 
-        file_data = {
-            "project_id": project_id,
-            "storage_path": storage_path,
-            "original_filename": original_filename,
-            "file_type": file_type,
-            "file_metadata": file_metadata or {},
-        }
+            file_data = {
+                "project_id": project_id,
+                "storage_path": storage_path,
+                "original_filename": original_filename,
+                "file_type": file_type,
+                "file_metadata": file_metadata or {},
+            }
 
-        if insights_cache:
-            file_data["insights_cache"] = insights_cache
-            file_data["last_analyzed_at"] = datetime.utcnow().isoformat()
+            if insights_cache:
+                file_data["insights_cache"] = insights_cache
+                file_data["last_analyzed_at"] = datetime.utcnow().isoformat()
 
-        if existing:
-            # Update existing record
-            db.table("uploaded_files").update(file_data).eq(
-                "project_id", project_id
-            ).eq("storage_path", storage_path).execute()
-            return existing["file_id"]
-        else:
-            # Insert new record
-            response = db.table("uploaded_files").insert(file_data).execute()
-            return response.data[0]["file_id"]
+            if existing:
+                # Update existing record
+                response = db.table("uploaded_files").update(file_data).eq(
+                    "project_id", project_id
+                ).eq("storage_path", storage_path).execute()
+
+                # Validate response
+                if not hasattr(response, 'data'):
+                    raise DatabaseError(f"Invalid database response: missing 'data' attribute")
+
+                return existing["file_id"]
+            else:
+                # Insert new record
+                response = db.table("uploaded_files").insert(file_data).execute()
+
+                # Validate response
+                if not hasattr(response, 'data') or not response.data or len(response.data) == 0:
+                    raise DatabaseError(f"Failed to insert file record: empty response")
+
+                if "file_id" not in response.data[0]:
+                    raise DatabaseError(f"Failed to insert file record: missing file_id in response")
+
+                return response.data[0]["file_id"]
+
+        except Exception as e:
+            if is_retryable_error(e):
+                raise  # Will be retried by decorator
+            else:
+                raise DatabaseError(
+                    f"Failed to upsert file record for {storage_path}: {str(e)}"
+                ) from e

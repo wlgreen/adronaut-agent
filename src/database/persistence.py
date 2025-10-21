@@ -6,32 +6,53 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import uuid
 from .client import get_db
+from ..utils.retry import retry, is_retryable_error
+
+
+class DatabaseError(Exception):
+    """Raised when database operation fails"""
+    pass
 
 
 class ProjectPersistence:
     """Handle all database operations for projects"""
 
     @staticmethod
+    @retry(max_attempts=3, exceptions=(Exception,), base_delay=2.0)
     def load_project(project_id: str) -> Optional[Dict[str, Any]]:
         """
-        Load project state from database
+        Load project state from database with retry logic
 
         Args:
             project_id: UUID of the project
 
         Returns:
             Project data as dictionary, or None if not found
+
+        Raises:
+            DatabaseError: If database operation fails after retries
         """
-        db = get_db()
+        try:
+            db = get_db()
+            response = db.table("projects").select("*").eq("project_id", project_id).execute()
 
-        response = db.table("projects").select("*").eq("project_id", project_id).execute()
+            # Validate response
+            if not hasattr(response, 'data'):
+                raise DatabaseError(f"Invalid database response: missing 'data' attribute")
 
-        if response.data and len(response.data) > 0:
-            return response.data[0]
+            if response.data and len(response.data) > 0:
+                return response.data[0]
 
-        return None
+            return None
+
+        except Exception as e:
+            if is_retryable_error(e):
+                raise  # Will be retried by decorator
+            else:
+                raise DatabaseError(f"Failed to load project {project_id}: {str(e)}") from e
 
     @staticmethod
+    @retry(max_attempts=3, exceptions=(Exception,), base_delay=2.0)
     def create_project(
         user_id: str,
         project_name: str,
@@ -39,7 +60,7 @@ class ProjectPersistence:
         target_budget: float
     ) -> str:
         """
-        Create a new project
+        Create a new project with retry logic
 
         Args:
             user_id: User identifier
@@ -49,36 +70,71 @@ class ProjectPersistence:
 
         Returns:
             project_id: UUID of created project
+
+        Raises:
+            DatabaseError: If database operation fails after retries
         """
-        db = get_db()
+        try:
+            db = get_db()
 
-        project_data = {
-            "user_id": user_id,
-            "project_name": project_name,
-            "product_description": product_description,
-            "target_budget": target_budget,
-            "current_phase": "initialized",
-            "iteration": 0,
-        }
+            project_data = {
+                "user_id": user_id,
+                "project_name": project_name,
+                "product_description": product_description,
+                "target_budget": target_budget,
+                "current_phase": "initialized",
+                "iteration": 0,
+            }
 
-        response = db.table("projects").insert(project_data).execute()
+            response = db.table("projects").insert(project_data).execute()
 
-        return response.data[0]["project_id"]
+            # Validate response
+            if not hasattr(response, 'data') or not response.data or len(response.data) == 0:
+                raise DatabaseError(f"Failed to create project: empty response")
+
+            if "project_id" not in response.data[0]:
+                raise DatabaseError(f"Failed to create project: missing project_id in response")
+
+            return response.data[0]["project_id"]
+
+        except Exception as e:
+            if is_retryable_error(e):
+                raise  # Will be retried by decorator
+            else:
+                raise DatabaseError(f"Failed to create project: {str(e)}") from e
 
     @staticmethod
+    @retry(max_attempts=3, exceptions=(Exception,), base_delay=2.0)
     def save_project(project_data: Dict[str, Any]) -> None:
         """
-        Save/update project state
+        Save/update project state with retry logic
 
         Args:
             project_data: Complete project state dictionary
+
+        Raises:
+            DatabaseError: If database operation fails after retries
         """
-        db = get_db()
+        try:
+            db = get_db()
 
-        project_id = project_data["project_id"]
+            if "project_id" not in project_data:
+                raise DatabaseError("project_data must contain 'project_id'")
 
-        # updated_at will be automatically updated by trigger
-        db.table("projects").update(project_data).eq("project_id", project_id).execute()
+            project_id = project_data["project_id"]
+
+            # updated_at will be automatically updated by trigger
+            response = db.table("projects").update(project_data).eq("project_id", project_id).execute()
+
+            # Validate response
+            if not hasattr(response, 'data'):
+                raise DatabaseError(f"Invalid database response: missing 'data' attribute")
+
+        except Exception as e:
+            if is_retryable_error(e):
+                raise  # Will be retried by decorator
+            else:
+                raise DatabaseError(f"Failed to save project {project_data.get('project_id', 'unknown')}: {str(e)}") from e
 
     @staticmethod
     def update_project_field(project_id: str, field: str, value: Any) -> None:
@@ -95,44 +151,85 @@ class ProjectPersistence:
         db.table("projects").update({field: value}).eq("project_id", project_id).execute()
 
     @staticmethod
+    @retry(max_attempts=3, exceptions=(Exception,), base_delay=2.0)
     def append_to_array_field(project_id: str, field: str, item: Any) -> None:
         """
-        Append an item to an array field (like experiment_results, config_history)
+        Append an item to an array field using atomic operation to prevent race conditions
+
+        This method uses PostgreSQL's array_append function for atomic updates,
+        preventing data loss when multiple sessions modify the same array.
 
         Args:
             project_id: UUID of the project
             field: Array field name
             item: Item to append
+
+        Raises:
+            DatabaseError: If database operation fails after retries
         """
-        db = get_db()
+        try:
+            db = get_db()
 
-        # First get current array
-        project = ProjectPersistence.load_project(project_id)
-        if not project:
-            raise ValueError(f"Project {project_id} not found")
+            # First verify project exists
+            project = ProjectPersistence.load_project(project_id)
+            if not project:
+                raise DatabaseError(f"Project {project_id} not found")
 
-        current_array = project.get(field, [])
-        if current_array is None:
-            current_array = []
+            # Use PostgreSQL's array append via RPC call for atomic operation
+            # This prevents race conditions from concurrent updates
+            try:
+                # Try using Supabase RPC if available
+                db.rpc('append_to_project_array', {
+                    'p_project_id': project_id,
+                    'p_field_name': field,
+                    'p_item': item
+                }).execute()
+            except Exception as rpc_error:
+                # Fallback: Read-modify-write with optimistic locking
+                # Get current array and updated_at timestamp
+                current_array = project.get(field, [])
+                if current_array is None:
+                    current_array = []
 
-        # Append new item
-        current_array.append(item)
+                updated_at = project.get('updated_at')
 
-        # Update
-        db.table("projects").update({field: current_array}).eq("project_id", project_id).execute()
+                # Append new item
+                current_array.append(item)
+
+                # Update with optimistic locking check
+                # This will fail if another process updated the record
+                response = db.table("projects").update({
+                    field: current_array
+                }).eq("project_id", project_id).eq("updated_at", updated_at).execute()
+
+                # Check if update succeeded (row was modified)
+                if not response.data or len(response.data) == 0:
+                    raise DatabaseError(
+                        f"Concurrent modification detected for project {project_id}. "
+                        f"Another process updated this record. Please retry."
+                    )
+
+        except Exception as e:
+            if is_retryable_error(e) or "concurrent modification" in str(e).lower():
+                raise  # Will be retried by decorator
+            else:
+                raise DatabaseError(
+                    f"Failed to append to {field} for project {project_id}: {str(e)}"
+                ) from e
 
 
 class SessionPersistence:
     """Handle all database operations for sessions"""
 
     @staticmethod
+    @retry(max_attempts=3, exceptions=(Exception,), base_delay=2.0)
     def create_session(
         project_id: str,
         session_num: int,
         uploaded_files: List[Dict[str, Any]]
     ) -> str:
         """
-        Create a new session
+        Create a new session with retry logic
 
         Args:
             project_id: UUID of the project
@@ -141,19 +238,36 @@ class SessionPersistence:
 
         Returns:
             session_id: UUID of created session
+
+        Raises:
+            DatabaseError: If database operation fails after retries
         """
-        db = get_db()
+        try:
+            db = get_db()
 
-        session_data = {
-            "project_id": project_id,
-            "session_num": session_num,
-            "uploaded_files": uploaded_files,
-            "execution_status": "running",
-        }
+            session_data = {
+                "project_id": project_id,
+                "session_num": session_num,
+                "uploaded_files": uploaded_files,
+                "execution_status": "running",
+            }
 
-        response = db.table("sessions").insert(session_data).execute()
+            response = db.table("sessions").insert(session_data).execute()
 
-        return response.data[0]["session_id"]
+            # Validate response
+            if not hasattr(response, 'data') or not response.data or len(response.data) == 0:
+                raise DatabaseError(f"Failed to create session: empty response")
+
+            if "session_id" not in response.data[0]:
+                raise DatabaseError(f"Failed to create session: missing session_id in response")
+
+            return response.data[0]["session_id"]
+
+        except Exception as e:
+            if is_retryable_error(e):
+                raise  # Will be retried by decorator
+            else:
+                raise DatabaseError(f"Failed to create session: {str(e)}") from e
 
     @staticmethod
     def update_session(session_id: str, updates: Dict[str, Any]) -> None:
