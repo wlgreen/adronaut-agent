@@ -78,19 +78,19 @@ def run_test_creative_workflow(
     if product_image_path:
         image_path = Path(product_image_path)
         if image_path.exists():
-            tracker.log_progress(f"Product image loaded: {image_path.name}")
+            tracker.log_message(f"Product image loaded: {image_path.name}")
             # Read image and encode as base64 for potential LLM vision analysis
             with open(image_path, "rb") as f:
                 image_data = base64.b64encode(f.read()).decode()
                 user_inputs["product_image_base64"] = image_data
                 user_inputs["product_image_path"] = str(image_path)
         else:
-            tracker.log_progress(f"Warning: Product image not found at {product_image_path}", level="warning")
+            tracker.log_message(f"Warning: Product image not found at {product_image_path}", level="warning")
 
     # ============================================
     # STEP 1: Generate Initial Creative Prompt
     # ============================================
-    tracker.log_progress("STEP 1: Generating initial creative prompt...", level="info")
+    tracker.log_message("STEP 1: Generating initial creative prompt...", level="info")
 
     # Build test combination structure expected by generate_creative_prompts
     test_combination = {
@@ -120,10 +120,10 @@ def run_test_creative_workflow(
             "full_generation": generation_result
         }
 
-        tracker.log_progress(f"✓ Initial prompt generated ({len(step1_result['original_prompt'])} chars)")
+        tracker.log_message(f"✓ Initial prompt generated ({len(step1_result['original_prompt'])} chars)")
 
     except Exception as e:
-        tracker.log_progress(f"✗ Failed to generate prompt: {str(e)}", level="error")
+        tracker.log_message(f"✗ Failed to generate prompt: {str(e)}", level="error")
         return {
             "success": False,
             "error": f"Step 1 failed: {str(e)}",
@@ -133,7 +133,7 @@ def run_test_creative_workflow(
     # ============================================
     # STEP 2: Review and Upgrade Prompt
     # ============================================
-    tracker.log_progress("STEP 2: Reviewing and upgrading prompt...", level="info")
+    tracker.log_message("STEP 2: Reviewing and upgrading prompt...", level="info")
 
     try:
         # Review the visual prompt
@@ -152,12 +152,12 @@ def run_test_creative_workflow(
         }
 
         if step2_result["changed"]:
-            tracker.log_progress(f"✓ Prompt upgraded ({len(step2_result['reviewed_prompt'])} chars, review notes: {step2_result['review_notes'][:100]}...)")
+            tracker.log_message(f"✓ Prompt upgraded ({len(step2_result['reviewed_prompt'])} chars, review notes: {step2_result['review_notes'][:100]}...)")
         else:
-            tracker.log_progress("✓ Prompt passed review (no changes needed)")
+            tracker.log_message("✓ Prompt passed review (no changes needed)")
 
     except Exception as e:
-        tracker.log_progress(f"✗ Review failed: {str(e)}, using original prompt", level="warning")
+        tracker.log_message(f"✗ Review failed: {str(e)}, using original prompt", level="warning")
         step2_result = {
             "success": False,
             "reviewed_prompt": step1_result["original_prompt"],
@@ -169,7 +169,7 @@ def run_test_creative_workflow(
     # ============================================
     # STEP 3: Final Creative Output
     # ============================================
-    tracker.log_progress("STEP 3: Preparing final creative output...", level="info")
+    tracker.log_message("STEP 3: Preparing final creative output...", level="info")
 
     # The reviewed prompt IS the creative for image generation
     step3_result = {
@@ -191,14 +191,14 @@ def run_test_creative_workflow(
     }
 
     if is_valid:
-        tracker.log_progress("✓ Final creative validated and ready for image generation")
+        tracker.log_message("✓ Final creative validated and ready for image generation")
     else:
-        tracker.log_progress(f"⚠ Validation warnings: {', '.join(validation_errors)}", level="warning")
+        tracker.log_message(f"⚠ Validation warnings: {', '.join(validation_errors)}", level="warning")
 
     # ============================================
     # STEP 4: Rate the Creative Prompt
     # ============================================
-    tracker.log_progress("STEP 4: Rating creative prompt quality...", level="info")
+    tracker.log_message("STEP 4: Rating creative prompt quality...", level="info")
 
     try:
         # Build requirements dict for rating context
@@ -231,10 +231,10 @@ def run_test_creative_workflow(
             "full_rating": rating_result
         }
 
-        tracker.log_progress(f"✓ Rating complete: {step4_result['overall_score']}/100")
+        tracker.log_message(f"✓ Rating complete: {step4_result['overall_score']}/100")
 
     except Exception as e:
-        tracker.log_progress(f"✗ Rating failed: {str(e)}", level="error")
+        tracker.log_message(f"✗ Rating failed: {str(e)}", level="error")
         step4_result = {
             "success": False,
             "error": str(e),
@@ -244,7 +244,7 @@ def run_test_creative_workflow(
     # ============================================
     # Compile Final Results
     # ============================================
-    tracker.log_progress("Workflow complete!", level="success")
+    tracker.log_message("Workflow complete!", level="success")
 
     final_result = {
         "success": True,
