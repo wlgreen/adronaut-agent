@@ -1,6 +1,11 @@
--- Test Creative Results Table
--- Stores results from test creative workflow executions
--- Run this after the main schema.sql
+-- Test Creative Results Table (OPTIONAL - NOT REQUIRED)
+--
+-- NOTE: The test-creative workflow runs entirely locally and does NOT require database access.
+-- This schema is provided as an optional reference if you want to store test results in a database.
+-- By default, test results are saved to JSON files in output/test_creatives/
+--
+-- Only run this schema if you specifically want database storage for test creative results.
+-- Run this after the main schema.sql if needed.
 
 -- Test creatives table: Store test creative workflow results
 CREATE TABLE test_creatives (

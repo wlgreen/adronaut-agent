@@ -37,16 +37,7 @@ The CLI will prompt for comma-separated file paths. The agent automatically dete
 
 ### Test Creative Workflow
 
-The `test-creative` command runs a standalone creative generation workflow for testing and experimentation. This workflow is separate from the main campaign agent and lets you quickly test creative generation with different parameters.
-
-**Database Setup:**
-Before using test-creative, run the additional schema:
-```bash
-# Run in Supabase SQL Editor after main schema.sql
-src/database/schema_test_creatives.sql
-```
-
-This creates the `test_creatives` table and `test_creative_analytics` view for tracking test results.
+The `test-creative` command runs a **local-only** standalone creative generation workflow for testing and experimentation. This workflow requires **no database setup** - it runs entirely locally and outputs JSON files.
 
 **Workflow Steps:**
 1. **Generate**: LLM creates initial creative prompt from product description
@@ -57,17 +48,10 @@ This creates the `test_creatives` table and `test_creative_analytics` view for t
 **Usage Examples:**
 
 ```bash
-# Basic usage (standalone test)
+# Basic usage
 python cli.py test-creative \
   --product-description "Premium wireless headphones with active noise cancellation" \
   --platform Meta
-
-# With context from existing project
-python cli.py test-creative \
-  --product-description "Premium wireless headphones with active noise cancellation" \
-  --project-id 8f7a2b1c-4e3d-9a5f-1b2c-3d4e5f6a7b8c \
-  --platform TikTok \
-  --audience "Tech enthusiasts 25-40"
 
 # With product image and quality checks
 python cli.py test-creative \
@@ -78,12 +62,18 @@ python cli.py test-creative \
   --brand-name "AudioTech" \
   --creative-style "Aspirational lifestyle"
 
-# Save to file only (skip database)
+# Specify audience and output file
+python cli.py test-creative \
+  --product-description "Premium wireless headphones" \
+  --platform TikTok \
+  --audience "Tech enthusiasts 25-40" \
+  --output my_test_results.json
+
+# Test for Google Ads
 python cli.py test-creative \
   --product-description "Product description here" \
   --platform Google \
-  --no-db \
-  --output my_test_results.json
+  --audience "Small business owners"
 ```
 
 **Available Platforms:**
@@ -103,14 +93,12 @@ The LLM evaluates prompts on 8 categories (0-10 each):
 - Authenticity - Platform-appropriate voice
 
 **Output:**
-- **JSON file**: `output/test_creatives/test_creative_<timestamp>.json`
-- **Database**: Record saved to `test_creatives` table with test_id
+- **JSON file**: `output/test_creatives/test_creative_<timestamp>.json` (local file only, no database)
 - **Terminal**: Pretty-printed results with scores, strengths, weaknesses, suggestions
 
 **Code Structure:**
 - `src/modules/creative_rater.py` - LLM-based rating with detailed criteria
-- `src/workflows/test_creative_workflow.py` - Orchestrates 4-step workflow
-- `src/database/persistence.py` - `TestCreativePersistence` class for DB operations
+- `src/workflows/test_creative_workflow.py` - Orchestrates 4-step workflow (local-only)
 - `cli.py` - `test_creative_command()` and `display_test_creative_results()`
 
 **Shared Implementation:**

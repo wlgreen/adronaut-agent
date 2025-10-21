@@ -25,7 +25,6 @@ from src.utils.progress import ProgressTracker
 def run_test_creative_workflow(
     product_description: str,
     product_image_path: Optional[str] = None,
-    context: Optional[Dict[str, Any]] = None,
     platform: str = "Meta",
     audience: Optional[str] = None,
     creative_style: Optional[str] = None,
@@ -38,7 +37,6 @@ def run_test_creative_workflow(
     Args:
         product_description: Description of the product/service
         product_image_path: Path to product image (optional, for visual context)
-        context: Additional context (strategy, insights, market data from main workflow)
         platform: Target platform (Meta/TikTok/Google)
         audience: Target audience description
         creative_style: Creative style preference
@@ -62,24 +60,19 @@ def run_test_creative_workflow(
         "product_image": product_image_path,
         "platform": platform,
         "audience": audience,
-        "creative_style": creative_style,
-        "has_context": context is not None and len(context) > 0
+        "creative_style": creative_style
     }
 
-    # Extract context components
-    strategy = context.get("strategy", {}) if context else {}
-    user_inputs = context.get("user_inputs", {}) if context else {}
+    # Set defaults for audience and style if not provided
+    if not audience:
+        audience = "General audience"
+    if not creative_style:
+        creative_style = "Professional"
 
-    # If no audience/style specified, try to extract from context
-    if not audience and strategy:
-        audience = strategy.get("target_audience", "General audience")
-    if not creative_style and strategy:
-        creative_style = strategy.get("messaging_angles", ["Professional"])[0] if strategy.get("messaging_angles") else "Professional"
-
-    # Add product description to user inputs
-    if not user_inputs:
-        user_inputs = {}
-    user_inputs["product_description"] = product_description
+    # Prepare user inputs
+    user_inputs = {
+        "product_description": product_description
+    }
 
     # Handle product image if provided
     if product_image_path:
@@ -103,15 +96,16 @@ def run_test_creative_workflow(
     test_combination = {
         "combo_id": "test_combo_1",
         "platform": platform,
-        "audience": audience or "General audience",
-        "creative_style": creative_style or "Professional"
+        "audience": audience,
+        "creative_style": creative_style
     }
 
     try:
         # Generate creative prompts (returns dict with visual_prompt, copy, hooks, etc.)
+        # Note: We pass empty strategy dict since this is standalone testing
         generation_result = generate_creative_prompts(
             test_combination=test_combination,
-            strategy=strategy,
+            strategy={},
             user_inputs=user_inputs
         )
 
@@ -276,29 +270,17 @@ def run_test_creative_workflow(
 
 def save_test_creative_results(
     results: Dict[str, Any],
-    product_description: str,
-    output_path: Optional[str] = None,
-    project_id: Optional[str] = None,
-    product_image_path: Optional[str] = None,
-    required_keywords: Optional[List[str]] = None,
-    brand_name: Optional[str] = None,
-    save_to_db: bool = True
-) -> Dict[str, str]:
+    output_path: Optional[str] = None
+) -> str:
     """
-    Save test creative results to JSON file and optionally to database.
+    Save test creative results to JSON file.
 
     Args:
         results: Workflow results from run_test_creative_workflow
-        product_description: Product description used
         output_path: Custom output path (optional)
-        project_id: Project ID for naming (optional)
-        product_image_path: Path to product image (optional)
-        required_keywords: Keywords that were checked for
-        brand_name: Brand name that was checked for
-        save_to_db: Whether to save to database (default: True)
 
     Returns:
-        Dict with file_path and test_id (if saved to DB)
+        Path to saved file
     """
 
     # Determine output path
@@ -306,12 +288,9 @@ def save_test_creative_results(
         output_dir = Path("output/test_creatives")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if project_id:
-            filename = f"test_creative_{project_id}.json"
-        else:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"test_creative_{timestamp}.json"
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"test_creative_{timestamp}.json"
 
         output_path = output_dir / filename
 
@@ -319,63 +298,4 @@ def save_test_creative_results(
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    result = {"file_path": str(output_path)}
-
-    # Save to database if requested
-    if save_to_db:
-        try:
-            from src.database.persistence import TestCreativePersistence
-
-            test_id = TestCreativePersistence.save_test_creative(
-                workflow_result=results,
-                product_description=product_description,
-                product_image_path=product_image_path,
-                project_id=project_id,
-                required_keywords=required_keywords,
-                brand_name=brand_name
-            )
-
-            result["test_id"] = test_id
-
-        except Exception as e:
-            print(f"Warning: Failed to save to database: {str(e)}")
-            result["db_error"] = str(e)
-
-    return result
-
-
-def load_context_from_project(project_id: str) -> Dict[str, Any]:
-    """
-    Load context from an existing project for use in test workflow.
-
-    Args:
-        project_id: Project ID to load
-
-    Returns:
-        Dict with strategy, insights, market_data, etc.
-    """
-
-    from src.database.persistence import ProjectPersistence
-
-    try:
-        project_data = ProjectPersistence.load_project(project_id)
-
-        if not project_data:
-            return {}
-
-        # Extract relevant context
-        context = {
-            "strategy": project_data.get("current_strategy", {}),
-            "insights": project_data.get("insights", {}),
-            "market_data": project_data.get("market_data", {}),
-            "historical_data": project_data.get("historical_data", {}),
-            "user_inputs": project_data.get("user_inputs", {}),
-            "current_phase": project_data.get("current_phase", ""),
-            "iteration": project_data.get("iteration", 0)
-        }
-
-        return context
-
-    except Exception as e:
-        print(f"Warning: Failed to load context from project {project_id}: {str(e)}")
-        return {}
+    return str(output_path)

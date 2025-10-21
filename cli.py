@@ -1046,8 +1046,7 @@ def test_creative_command(args):
     """Run test creative workflow"""
     from src.workflows.test_creative_workflow import (
         run_test_creative_workflow,
-        save_test_creative_results,
-        load_context_from_project
+        save_test_creative_results
     )
 
     print_banner()
@@ -1059,17 +1058,6 @@ def test_creative_command(args):
     required_keywords = None
     if args.keywords:
         required_keywords = [k.strip() for k in args.keywords.split(",")]
-
-    # Load context from project if specified
-    context = None
-    if args.project_id:
-        print(f"Loading context from project: {args.project_id}")
-        context = load_context_from_project(args.project_id)
-        if context:
-            print(f"✓ Loaded context from project")
-        else:
-            print(f"⚠ Warning: Could not load context from project {args.project_id}")
-        print()
 
     # Print input summary
     print("INPUT SUMMARY:")
@@ -1092,7 +1080,6 @@ def test_creative_command(args):
         results = run_test_creative_workflow(
             product_description=args.product_description,
             product_image_path=args.product_image,
-            context=context,
             platform=args.platform,
             audience=args.audience,
             creative_style=args.creative_style,
@@ -1105,24 +1092,16 @@ def test_creative_command(args):
         display_test_creative_results(results)
 
         # Save results
-        save_result = save_test_creative_results(
+        output_path = save_test_creative_results(
             results=results,
-            product_description=args.product_description,
-            output_path=args.output,
-            project_id=args.project_id,
-            product_image_path=args.product_image,
-            required_keywords=required_keywords,
-            brand_name=args.brand_name,
-            save_to_db=not args.no_db
+            output_path=args.output
         )
 
         print()
         print("=" * 60)
         print("  RESULTS SAVED")
         print("=" * 60)
-        print(f"📄 JSON file: {save_result.get('file_path')}")
-        if save_result.get('test_id'):
-            print(f"💾 Database ID: {save_result.get('test_id')}")
+        print(f"📄 JSON file: {output_path}")
         print()
 
         return 0
@@ -1307,10 +1286,6 @@ def main():
         help="Path to product image (optional, for visual context)"
     )
     test_creative_parser.add_argument(
-        "--project-id",
-        help="Project ID to load context from (optional, for strategy-aware generation)"
-    )
-    test_creative_parser.add_argument(
         "--platform",
         default="Meta",
         choices=["Meta", "TikTok", "Google"],
@@ -1335,11 +1310,6 @@ def main():
     test_creative_parser.add_argument(
         "--output",
         help="Custom output file path (default: output/test_creatives/test_creative_<timestamp>.json)"
-    )
-    test_creative_parser.add_argument(
-        "--no-db",
-        action="store_true",
-        help="Skip saving to database (only save to JSON file)"
     )
 
     # Deploy to Meta command
