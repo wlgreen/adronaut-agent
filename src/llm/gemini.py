@@ -270,9 +270,47 @@ class GeminiClient:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             image_path = output_dir / f"test_creative_{timestamp}.png"
 
-            # Decode and save
+            # Determine if data is already bytes or base64-encoded
+            if isinstance(image_data, bytes):
+                # Data is already raw bytes
+                image_bytes = image_data
+                if tracker:
+                    tracker.log_message(f"  Image data is raw bytes ({len(image_bytes)} bytes)", "info")
+            else:
+                # Data is base64-encoded string
+                try:
+                    image_bytes = base64.b64decode(image_data)
+                    if tracker:
+                        tracker.log_message(f"  Decoded base64 image ({len(image_bytes)} bytes)", "info")
+                except Exception as decode_error:
+                    raise ValueError(f"Failed to decode image data: {decode_error}")
+
+            # Validate PNG header (should start with 89 50 4E 47)
+            if len(image_bytes) < 8:
+                raise ValueError(f"Image data too small ({len(image_bytes)} bytes)")
+
+            png_header = image_bytes[:8]
+            expected_png_header = b'\x89PNG\r\n\x1a\n'
+
+            if png_header != expected_png_header:
+                # Log the actual header for debugging
+                header_hex = ' '.join(f'{b:02x}' for b in png_header)
+                if tracker:
+                    tracker.log_message(f"  ⚠ Warning: Invalid PNG header: {header_hex}", "warning")
+                    tracker.log_message(f"  ⚠ Expected: 89 50 4e 47 0d 0a 1a 0a", "warning")
+
+            # Save image bytes to file
             with open(image_path, "wb") as f:
-                f.write(base64.b64decode(image_data))
+                f.write(image_bytes)
+
+            # Verify saved file can be opened as PNG
+            try:
+                import PIL.Image
+                with PIL.Image.open(image_path) as img:
+                    if tracker:
+                        tracker.log_message(f"  ✓ Verified PNG: {img.size[0]}x{img.size[1]}", "success")
+            except Exception as verify_error:
+                raise ValueError(f"Saved image cannot be opened as PNG: {verify_error}")
 
             if tracker:
                 tracker.log_message(f"✓ Image saved: {image_path}", "success")

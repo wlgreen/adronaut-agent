@@ -95,7 +95,7 @@ Evaluate the FINAL REVIEWED PROMPT against each criterion. Provide:
 7. WEAKNESSES: List 2-3 areas for improvement
 8. SUGGESTIONS: Provide 2-3 specific actionable suggestions
 
-Return your evaluation as a JSON object with this structure:
+Return your evaluation as a JSON object with this EXACT structure:
 {{
     "overall_score": 85,
     "category_scores": {{
@@ -111,19 +111,19 @@ Return your evaluation as a JSON object with this structure:
     "keyword_analysis": {{
         "required_keywords_found": ["keyword1", "keyword2"],
         "required_keywords_missing": ["keyword3"],
-        "conceptual_matches": {{"keyword4": "appears as 'alternative phrase'"}}
+        "conceptual_matches": {{"keyword4": "appears as alternative phrase"}}
     }},
     "brand_presence": {{
         "brand_mentioned": true,
         "logo_described": true,
-        "prominence_level": "high/medium/low",
-        "details": "Specific notes about brand visibility"
+        "prominence_level": "high",
+        "details": "Brief notes about brand visibility"
     }},
     "prompt_adherence": {{
         "platform_match": true,
         "audience_match": true,
         "style_match": true,
-        "details": "How well it matches requirements"
+        "details": "Brief notes about requirements match"
     }},
     "strengths": [
         "Strength 1",
@@ -139,6 +139,15 @@ Return your evaluation as a JSON object with this structure:
     ]
 }}
 
+CRITICAL JSON FORMATTING RULES:
+- Use double quotes for all strings (not single quotes)
+- Keep all "details" fields brief (under 100 characters)
+- Do NOT use newlines within string values
+- Do NOT use apostrophes or single quotes in text - use simple language
+- Ensure all commas are properly placed between fields
+- Do NOT include trailing commas
+- All boolean values must be lowercase: true/false (not True/False)
+
 Be specific and reference actual content from the prompt in your analysis."""
 
     # Call LLM for rating
@@ -149,10 +158,27 @@ Be specific and reference actual content from the prompt in your analysis."""
         task_name="Creative Prompt Rating"
     )
 
-    # Parse and validate response
+    # Parse and validate response with robust error handling
     try:
         import json
-        rating_result = json.loads(response) if isinstance(response, str) else response
+        from json_repair import repair_json
+
+        # First attempt: standard JSON parsing
+        try:
+            rating_result = json.loads(response) if isinstance(response, str) else response
+        except json.JSONDecodeError as e:
+            # Second attempt: repair malformed JSON
+            print(f"  ⚠ JSON parse error: {str(e)}")
+            print(f"  ⚠ Error context: {response[max(0, e.pos-50):e.pos+50]}...")
+            print(f"  ⟳ Attempting to repair JSON...")
+
+            try:
+                repaired = repair_json(response)
+                rating_result = json.loads(repaired)
+                print(f"  ✓ JSON successfully repaired")
+            except Exception as repair_error:
+                print(f"  ✗ JSON repair failed: {str(repair_error)}")
+                raise  # Re-raise to be caught by outer try-except
 
         # Ensure all required fields are present
         required_fields = [
@@ -175,8 +201,11 @@ Be specific and reference actual content from the prompt in your analysis."""
 
         return rating_result
 
-    except (json.JSONDecodeError, TypeError) as e:
-        # Fallback if JSON parsing fails
+    except Exception as e:
+        # Fallback if JSON parsing fails completely
+        print(f"  ✗ ✗ Rating failed: {str(e)}")
+        print(f"\nResponse preview: {str(response)[:500]}...\n")
+
         return {
             "overall_score": 0,
             "category_scores": {},

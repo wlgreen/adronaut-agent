@@ -23,17 +23,25 @@ Run `src/database/schema.sql` in your Supabase SQL Editor to create:
 - `sessions` - Logs each interaction
 - `react_cycles` - Audit trail of node executions
 
+**Optional**: Supabase Storage bucket for file uploads (see `SUPABASE_STORAGE_SETUP.md`)
+
 ### Running the Agent
 
 ```bash
-# New project (by name)
+# New project (by name) - creates UUID automatically
 python cli.py run --project-id my-campaign-001
 
 # Existing project (by UUID)
 python cli.py run --project-id 8f7a2b1c-4e3d-9a5f-1b2c-3d4e5f6a7b8c
+
+# Resume interrupted workflow with --resume flag
+python cli.py run --project-id my-campaign-001 --resume
+
+# Force restart even if resumption possible
+python cli.py run --project-id my-campaign-001 --force-restart
 ```
 
-The CLI will prompt for comma-separated file paths. The agent automatically detects file types.
+The CLI will prompt for comma-separated file paths. The agent automatically detects file types (historical/experiment_results/enrichment).
 
 ### Test Creative Workflow
 
@@ -201,11 +209,16 @@ All LLM calls use descriptive `task_name` for progress tracking:
 | Campaign Configuration | 0.5 | `campaign.py` | Generates platform configs |
 | Performance Analysis | 0.3 | `reflection.py` | Analyzes experiment results |
 | Optimization Patch Generation | 0.6 | `reflection.py` | Creates optimization patches |
+| Creative Prompt Generation | 0.7 | `creative_generator.py` | Generates visual prompts & ad copy |
+| Creative Rating | 0.4 | `creative_rater.py` | Rates creative quality (0-100) |
+| Image Generation | N/A | `gemini.py` | Imagen model for image generation |
 
 **Critical detail**: `insight.py` prompt template instructs LLM to:
 - Reference actual data (e.g., "TikTok had 23% lower CPA")
 - Cite top/bottom performers from historical data
 - Base experiment plans on data gaps and opportunities
+
+**Gemini Model**: Default is `gemini-2.0-flash-exp` (set via `GEMINI_MODEL` env var)
 
 ## Important Implementation Details
 
@@ -215,6 +228,8 @@ All nodes are decorated with `@track_node` which logs execution time and output 
 - Colored terminal output for each node
 - LLM call prompts and responses (first 200 chars)
 - Execution timing for debugging
+
+Use `get_progress_tracker()` to get the singleton tracker instance.
 
 ### Node Outputs for Inter-Node Communication
 
@@ -226,6 +241,8 @@ state["node_outputs"]["reflection_analysis"] = analysis
 # In adjustment_node
 analysis = state["node_outputs"].get("reflection_analysis", {})
 ```
+
+**Important**: `node_outputs` is ephemeral and NOT persisted to database. Use it only for passing data between nodes in a single session.
 
 ### Config History and Iteration Tracking
 
@@ -240,9 +257,64 @@ Output files are versioned: `campaign_{project_id}_v{iteration}.json`
 
 If `TAVILY_API_KEY` is set, `data_collection_node` searches for market benchmarks based on product description. If not set, agent proceeds without web data.
 
-## Flexible Execution Timeline (NEW)
+### Flow Resumption
 
-The agent now supports **LLM-powered flexible execution planning** with adaptive timelines from 7-30 days based on campaign complexity and budget.
+The agent supports resuming interrupted workflows:
+
+**How it works**:
+1. Each node marks itself as `current_executing_node` before execution
+2. On completion, updates `last_completed_node` and appends to `completed_nodes`
+3. If execution fails/stops, state contains exact resumption point
+4. Use `--resume` flag to continue from last checkpoint
+5. Use `--force-restart` to start fresh even if resumable
+
+**Key fields** (`src/agent/state.py`):
+- `last_completed_node`: Last successfully completed node
+- `completed_nodes`: List of all completed nodes in order
+- `flow_status`: `not_started` | `in_progress` | `completed` | `failed`
+- `current_executing_node`: Currently running node (for crash recovery)
+- `is_resuming`: Boolean flag indicating resumption mode
+
+**Router logic** (`src/agent/router.py`):
+- `get_resume_node()`: Determines next node based on last completed
+- Skips already-completed nodes when resuming
+
+See `RESUMPTION_GUIDE.md` for detailed documentation.
+
+## Creative Generation Workflow
+
+The system includes a complete creative generation pipeline:
+
+**Components**:
+1. **`src/modules/creative_generator.py`**: Generates visual prompts, ad copy, hooks
+   - `generate_creative_prompts()`: Creates platform-specific creative assets
+   - `review_and_upgrade_visual_prompt()`: LLM-powered quality review (10-point checklist)
+   - `validate_creative_prompt()`: Platform compliance validation
+
+2. **`src/modules/creative_rater.py`**: LLM-based quality rating system
+   - `rate_creative_prompt()`: Rates prompts 0-100 across 8 categories
+   - `rate_generated_image()`: Reviews generated images for prompt adherence
+   - Categories: Keyword Presence, Brand Visibility, Visual Clarity, Product Fidelity, etc.
+
+3. **`src/workflows/test_creative_workflow.py`**: 6-step standalone workflow
+   - Step 1: Generate initial creative prompt
+   - Step 2: Review and upgrade prompt
+   - Step 3: Validate final creative
+   - Step 4: Rate creative quality
+   - Step 5: Generate image from prompt (Imagen)
+   - Step 6: Review/rate generated image
+
+**Platform Specifications**:
+- **Meta**: Feed (1:1), Stories (9:16), Mobile Feed (4:5) | 125 char primary text, 40 char headline
+- **TikTok**: Primary (9:16), Secondary (1:1) | 100 char text limit
+- **Google**: Responsive (1.91:1), Square (1:1) | 30 char headline, 90 char description
+
+**Usage in main workflow**:
+Creative prompts are automatically generated for each test combination in the execution timeline during the `campaign_setup_node`. The system generates platform-specific visual prompts and ad copy based on strategy, audience segments, and creative styles.
+
+## Flexible Execution Timeline
+
+The agent supports **LLM-powered flexible execution planning** with adaptive timelines from 7-30 days based on campaign complexity and budget.
 
 **How it works:**
 - LLM analyzes historical data, budget constraints, and strategic hypotheses
@@ -309,6 +381,67 @@ The agent now supports **LLM-powered flexible execution planning** with adaptive
 
 The agent has multiple mechanisms for gathering context:
 
-1. **Web search**: `data_collection_node` uses Tavily to search for market benchmarks (line 138-152 in `nodes.py`)
+1. **Web search**: `data_collection_node` uses Tavily to search for market benchmarks (optional, requires API key)
 2. **User data collection**: Accepts multiple file uploads per session, merges into accumulated state
 3. **Discovery node**: Parallel strategies (LLM inference + web search + user prompts) with minimal friction
+
+## Testing
+
+```bash
+# Run specific test file
+python -m pytest tests/test_creative_generation.py -v
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Run Meta Ads API tests (requires credentials)
+python -m pytest tests/test_meta_ads_api.py -v
+
+# Run integration tests
+python -m pytest tests/integration/ -v
+```
+
+## Meta Ads API Integration
+
+The system includes full Meta Marketing API integration for automated campaign deployment:
+
+**Configuration** (`.env`):
+- `META_ACCESS_TOKEN` - Meta Marketing API access token
+- `META_AD_ACCOUNT_ID` - Ad account ID (format: `act_XXXXXXXXX`)
+- `META_PAGE_ID` - Facebook Page ID for creative publishing
+- `META_INSTAGRAM_ACTOR_ID` - Instagram actor ID (optional)
+- `META_API_VERSION` - API version (default: `v24.0`)
+- `META_DRY_RUN` - Set `true` to log API calls without executing
+- `META_SANDBOX_MODE` - Set `true` to use Meta's sandbox environment
+
+**Key Files**:
+- `src/integrations/meta_ads.py` - Full Meta API implementation (campaigns, ad sets, creatives)
+- `docs/META_ADS_API_V24_UPDATES.md` - Latest API changes and Advantage+ features
+- `docs/META_ADS_TESTING_GUIDE.md` - Testing strategies and sandbox setup
+- `docs/MANUAL_META_ADS_SETUP.md` - Step-by-step manual deployment guide
+
+**Features**:
+- Advantage+ campaign structure (v23.0+)
+- Automated audience targeting with `advantage_audience`
+- Creative upload to Facebook/Instagram
+- Budget optimization and placement flexibility
+- Rate limiting and error handling
+
+## Image Generation
+
+The creative workflow includes AI image generation using Gemini's Imagen model:
+
+**Usage**:
+```python
+from src.llm.gemini import get_gemini
+gemini = get_gemini()
+
+result = gemini.generate_image(
+    prompt="Visual prompt here",
+    aspect_ratio="1:1",  # or "9:16", "16:9", "4:5"
+    task_name="Creative Generation"
+)
+# Returns: {"success": bool, "image_path": str, "model": str}
+```
+
+Images are saved to `output/generated_images/` with timestamped filenames.

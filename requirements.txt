@@ -25,8 +25,12 @@ facebook-business-sdk>=21.0.0
 pandas>=2.2.0
 numpy>=1.26.0
 
+# Image processing
+Pillow>=10.0.0
+
 # Environment variables
 python-dotenv>=1.0.0
 
 # Utilities
 pydantic>=2.9.0
+json-repair>=0.25.0
