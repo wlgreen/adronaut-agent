@@ -211,7 +211,8 @@ class GeminiClient:
         self,
         prompt: str,
         aspect_ratio: str = "1:1",
-        task_name: str = "Image Generation"
+        task_name: str = "Image Generation",
+        product_image_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate image using Gemini 2.5 Flash Image
@@ -220,6 +221,7 @@ class GeminiClient:
             prompt: Visual prompt for image generation
             aspect_ratio: "1:1", "16:9", "9:16", "4:5"
             task_name: Task name for logging
+            product_image_path: Optional path to product reference image
 
         Returns:
             {
@@ -231,6 +233,7 @@ class GeminiClient:
         """
         from pathlib import Path
         from datetime import datetime
+        import PIL.Image
 
         tracker = _get_progress_tracker()
 
@@ -242,18 +245,59 @@ class GeminiClient:
             "4:5": "1024x1280"
         }
 
+        # Negative prompts to avoid fake/artificial appearance
+        negative_prompts = [
+            "artificial", "CGI", "3D render", "cartoon", "illustration",
+            "drawing", "painting", "anime", "synthetic", "fake textures",
+            "obvious AI generation", "unrealistic skin", "plastic appearance",
+            "video game graphics", "low quality", "blurry", "distorted"
+        ]
+
+        # Enhance prompt with realism emphasis
+        enhanced_prompt = f"""PHOTOREALISTIC COMMERCIAL PHOTOGRAPHY - REAL PHOTOGRAPH ONLY
+
+{prompt}
+
+CRITICAL REQUIREMENTS:
+- This must be a REAL, photorealistic photograph suitable for professional advertising
+- Professional commercial photography quality with natural lighting and textures
+- Authentic, real-world scene - NOT CGI, illustration, or artificial rendering
+- High-resolution clarity with sharp product details
+- Natural skin tones, realistic materials, genuine product representation
+
+AVOID: {', '.join(negative_prompts)}"""
+
         try:
             if tracker:
-                tracker.log_message(f"🎨 Generating image with {aspect_ratio} aspect ratio...", "info")
+                tracker.log_message(f"🎨 Generating photorealistic image with {aspect_ratio} aspect ratio...", "info")
+                if product_image_path:
+                    tracker.log_message(f"  📸 Using product reference image: {product_image_path}", "info")
 
             # Use gemini-2.5-flash-image model
             image_model = genai.GenerativeModel("gemini-2.5-flash-image")
 
-            # Generate image
+            # Prepare content for generation
+            content_parts = []
+
+            # Add product reference image if provided
+            if product_image_path and Path(product_image_path).exists():
+                try:
+                    product_image = PIL.Image.open(product_image_path)
+                    content_parts.append("PRODUCT REFERENCE IMAGE (match this product's appearance exactly):")
+                    content_parts.append(product_image)
+                    content_parts.append("\nGENERATE IMAGE BASED ON THIS PRODUCT AND PROMPT BELOW:\n")
+                except Exception as e:
+                    if tracker:
+                        tracker.log_message(f"  ⚠ Could not load product image: {e}", "warning")
+
+            # Add enhanced prompt
+            content_parts.append(enhanced_prompt)
+
+            # Generate image with lower temperature for more faithful adherence
             response = image_model.generate_content(
-                prompt,
+                content_parts if len(content_parts) > 1 else enhanced_prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
+                    temperature=0.4,  # Lowered from 0.7 for more realistic, faithful generation
                     candidate_count=1,
                 )
             )

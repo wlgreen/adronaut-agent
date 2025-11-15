@@ -243,43 +243,78 @@ def run_test_creative_workflow(
         }
 
     # ============================================
-    # STEP 5: Generate Image from Prompt
+    # STEP 5: Generate Image from Prompt (with Quality Validation)
     # ============================================
     tracker.log_message("STEP 5: Generating image from visual prompt...", level="info")
 
-    try:
-        from src.llm.gemini import get_gemini
-        gemini = get_gemini()
+    MAX_GENERATION_ATTEMPTS = 3
+    MIN_QUALITY_SCORE = 70  # Minimum acceptable image quality score
 
-        # Get aspect ratio from technical specs
-        aspect_ratio = step3_result["technical_specs"].get("aspect_ratio", "1:1")
+    step5_result = {}
+    generation_attempts = []
 
-        image_result = gemini.generate_image(
-            prompt=step3_result["final_visual_prompt"],
-            aspect_ratio=aspect_ratio,
-            task_name="Creative Image Generation"
-        )
+    for attempt in range(MAX_GENERATION_ATTEMPTS):
+        try:
+            from src.llm.gemini import get_gemini
+            gemini = get_gemini()
 
-        step5_result = {
-            "success": image_result["success"],
-            "image_path": image_result.get("image_path"),
-            "model": image_result.get("model"),
-            "aspect_ratio": aspect_ratio,
-            "error": image_result.get("error")
-        }
+            # Get aspect ratio from technical specs
+            aspect_ratio = step3_result["technical_specs"].get("aspect_ratio", "1:1")
 
-        if step5_result["success"]:
-            tracker.log_message(f"✓ Image generated: {step5_result['image_path']}")
-        else:
-            tracker.log_message(f"✗ Image generation failed: {step5_result['error']}", level="error")
+            # Log attempt
+            if attempt > 0:
+                tracker.log_message(f"  Attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS}...", level="info")
 
-    except Exception as e:
-        tracker.log_message(f"✗ Image generation failed: {str(e)}", level="error")
-        step5_result = {
+            # Generate image with product reference if available
+            image_result = gemini.generate_image(
+                prompt=step3_result["final_visual_prompt"],
+                aspect_ratio=aspect_ratio,
+                task_name="Creative Image Generation",
+                product_image_path=product_image_path  # Pass product image for visual reference
+            )
+
+            attempt_result = {
+                "attempt": attempt + 1,
+                "success": image_result["success"],
+                "image_path": image_result.get("image_path"),
+                "model": image_result.get("model"),
+                "aspect_ratio": aspect_ratio,
+                "error": image_result.get("error")
+            }
+
+            generation_attempts.append(attempt_result)
+
+            if attempt_result["success"]:
+                tracker.log_message(f"✓ Image generated: {attempt_result['image_path']}")
+                step5_result = attempt_result
+                break  # Successful generation, proceed to rating
+            else:
+                tracker.log_message(f"✗ Generation failed: {attempt_result['error']}", level="error")
+                if attempt < MAX_GENERATION_ATTEMPTS - 1:
+                    tracker.log_message("  Retrying...", level="info")
+
+        except Exception as e:
+            tracker.log_message(f"✗ Image generation failed: {str(e)}", level="error")
+            attempt_result = {
+                "attempt": attempt + 1,
+                "success": False,
+                "image_path": None,
+                "error": str(e)
+            }
+            generation_attempts.append(attempt_result)
+
+            if attempt < MAX_GENERATION_ATTEMPTS - 1:
+                tracker.log_message("  Retrying...", level="info")
+
+    # Set final step5 result
+    if not step5_result:
+        step5_result = generation_attempts[-1] if generation_attempts else {
             "success": False,
             "image_path": None,
-            "error": str(e)
+            "error": "All generation attempts failed"
         }
+
+    step5_result["all_attempts"] = generation_attempts
 
     # ============================================
     # STEP 6: Review/Rate Generated Image
@@ -309,10 +344,16 @@ def run_test_creative_workflow(
                 "strengths": image_rating.get("strengths", []),
                 "weaknesses": image_rating.get("weaknesses", []),
                 "suggestions": image_rating.get("suggestions", []),
-                "full_rating": image_rating
+                "full_rating": image_rating,
+                "meets_quality_threshold": image_rating.get("overall_score", 0) >= MIN_QUALITY_SCORE
             }
 
-            tracker.log_message(f"✓ Image rating complete: {step6_result['overall_score']}/100")
+            # Check quality threshold
+            if step6_result["meets_quality_threshold"]:
+                tracker.log_message(f"✓ Image rating complete: {step6_result['overall_score']}/100 (meets quality threshold)", level="success")
+            else:
+                tracker.log_message(f"⚠ Image rating: {step6_result['overall_score']}/100 (below quality threshold of {MIN_QUALITY_SCORE})", level="warning")
+                tracker.log_message(f"  Suggestions: {', '.join(step6_result['suggestions'][:2])}", level="info")
 
         except Exception as e:
             tracker.log_message(f"✗ Image rating failed: {str(e)}", level="error")

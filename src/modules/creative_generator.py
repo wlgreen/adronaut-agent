@@ -3,6 +3,7 @@ Creative prompt generation module for AI-powered ad creative development
 """
 
 from typing import Dict, Any, List, Tuple
+import re
 from ..llm.gemini import get_gemini
 
 
@@ -43,6 +44,151 @@ PLATFORM_SPECS = {
         "file_size_max": "5MB"
     }
 }
+
+
+# Product feature to visual marker mapping
+FEATURE_VISUAL_MARKERS = {
+    # Audio/Headphone features
+    "noise cancellation": [
+        "CLEARLY VISIBLE small external microphone holes or grilles on the ear cups for active noise detection (flush-mounted circular or oval openings)",
+        "thick, plush memory foam ear cushions that create a VISIBLE SEAL around the ears, showing cushion depth and softness",
+        "closed-back ear cup design with solid outer shells",
+        "small LED indicator light CLEARLY VISIBLE on the headphone body (white or green for ANC active status)"
+    ],
+    "active noise cancellation": [
+        "CLEARLY VISIBLE small external microphone holes or grilles on the ear cups for active noise detection (flush-mounted circular or oval openings)",
+        "thick, plush memory foam ear cushions that create a VISIBLE SEAL around the ears, showing cushion depth and softness",
+        "closed-back ear cup design with solid outer shells",
+        "small LED indicator light CLEARLY VISIBLE on the headphone body (white or green for ANC active status)"
+    ],
+    "anc": [
+        "CLEARLY VISIBLE small external microphone holes or grilles on the ear cups for noise detection",
+        "thick, plush memory foam ear cushions creating a visible seal around the ears",
+        "closed-back ear cup design"
+    ],
+    "wireless": [
+        "clean design with ABSOLUTELY NO VISIBLE CABLES or wires connecting to the headphones",
+        "small LED indicator light showing wireless connectivity status (blue pulse or solid blue for Bluetooth pairing)",
+        "sleek wireless aesthetic with smooth, uninterrupted surfaces"
+    ],
+    "bluetooth": [
+        "ABSOLUTELY NO CABLES attached to the headphones anywhere",
+        "small LED light CLEARLY VISIBLE showing Bluetooth status (blue color for pairing/connection)",
+        "wireless connectivity evident in clean, cable-free design"
+    ],
+
+    # Premium/Quality features
+    "premium": [
+        "high-quality materials with VISIBLE TEXTURE clearly shown (brushed metal surfaces, genuine leather grain, premium fabric weave)",
+        "precision craftsmanship evident in seams, joints, and assembly with visible clean lines",
+        "refined color palette with premium finishing touches",
+        "brand logo or emblem CLEARLY VISIBLE and well-lit (debossed, engraved, or embossed on ear cups or headband)"
+    ],
+    "luxury": [
+        "premium materials like brushed aluminum, soft leather, or high-end fabrics with VISIBLE material quality",
+        "meticulous attention to detail in stitching and construction - every seam should be visible and perfect",
+        "sophisticated color schemes and metallic accents that catch the light",
+        "prominent brand marking or logo CLEARLY VISIBLE (embossed, debossed, or laser-engraved)"
+    ],
+
+    # Technology features
+    "touch controls": [
+        "visible touch-sensitive panel on ear cup",
+        "smooth, glossy surface indicating touch interface",
+        "subtle touch gesture icons or indicators"
+    ],
+    "long battery": [
+        "USB-C charging port visible",
+        "battery indicator LED",
+        "robust build suggesting extended use capability"
+    ],
+
+    # Comfort features
+    "comfortable": [
+        "soft, padded ear cushions with visible plushness",
+        "adjustable headband with cushioning",
+        "ergonomic shape conforming to head/ear contours"
+    ],
+    "lightweight": [
+        "slim profile and streamlined design",
+        "minimal bulk while maintaining structure",
+        "refined proportions suggesting reduced weight"
+    ]
+}
+
+
+def extract_product_features(product_description: str) -> List[str]:
+    """
+    Extract key product features from description and map them to specific visual markers
+
+    Args:
+        product_description: Raw product description text
+
+    Returns:
+        List of specific visual markers that should appear in generated images
+    """
+    if not product_description:
+        return []
+
+    # Convert to lowercase for matching
+    desc_lower = product_description.lower()
+
+    visual_markers = []
+    matched_features = []
+
+    # Find all matching features
+    for feature_key, markers in FEATURE_VISUAL_MARKERS.items():
+        if feature_key in desc_lower:
+            matched_features.append(feature_key)
+            visual_markers.extend(markers)
+
+    # Remove duplicates while preserving order
+    unique_markers = []
+    seen = set()
+    for marker in visual_markers:
+        if marker not in seen:
+            unique_markers.append(marker)
+            seen.add(marker)
+
+    return unique_markers
+
+
+def enhance_visual_prompt_with_features(
+    visual_prompt_template: str,
+    product_description: str
+) -> str:
+    """
+    Enhance the visual prompt template with explicit product feature requirements
+
+    Args:
+        visual_prompt_template: Base visual prompt template
+        product_description: Product description to extract features from
+
+    Returns:
+        Enhanced template with feature-specific instructions
+    """
+    visual_markers = extract_product_features(product_description)
+
+    if not visual_markers:
+        return visual_prompt_template
+
+    # Create feature emphasis section
+    feature_emphasis = "\n\nCRITICAL PRODUCT FEATURES THAT MUST BE VISIBLE:\n"
+    feature_emphasis += "The product MUST clearly show these specific visual elements:\n"
+    for marker in visual_markers:
+        feature_emphasis += f"• {marker}\n"
+    feature_emphasis += "\nThese features are ESSENTIAL to the product's identity and must be prominently depicted.\n"
+
+    # Insert feature emphasis after product fidelity section
+    if "3. **Product fidelity**:" in visual_prompt_template:
+        enhanced = visual_prompt_template.replace(
+            "3. **Product fidelity**: Describe the product precisely (shape, color, materials, proportions, logo placement) based on the uploaded reference.",
+            f"3. **Product fidelity**: Describe the product precisely (shape, color, materials, proportions, logo placement) based on the uploaded reference.{feature_emphasis}"
+        )
+        return enhanced
+
+    # Fallback: Add to beginning of template
+    return feature_emphasis + "\n" + visual_prompt_template
 
 
 CREATIVE_GENERATION_SYSTEM_INSTRUCTION = """You are a world-class creative director and professional advertising photographer who creates cinematic, photo-realistic campaign visuals that make people stop scrolling.
@@ -90,6 +236,8 @@ You're creating an ad that will appear on {platform} for {audience_segment}. The
 ABOUT THE PRODUCT:
 {product_description}
 
+{feature_requirements}
+
 BRAND VOICE & GUIDELINES:
 {brand_guidelines}
 
@@ -115,7 +263,7 @@ STRUCTURE (in this order):
 
 2. **Subject**: Describe who or what is in the image, their action, attire, and demeanor.
 
-3. **Product fidelity**: Describe the product precisely (shape, color, materials, proportions, logo placement) based on the uploaded reference.
+3. **Product fidelity**: Describe the product precisely (shape, color, materials, proportions, logo placement) based on the uploaded reference. {feature_emphasis}
 
 4. **Lighting and camera**: Describe light direction, color temperature, exposure, lens perspective, and depth of field.
 
@@ -477,6 +625,18 @@ def generate_creative_prompts(
     product_description = user_inputs.get("product_description", "Product information not provided")
     brand_guidelines = user_inputs.get("brand_guidelines", "No specific brand guidelines provided. Use clean, professional aesthetic.")
 
+    # Extract product features and create requirements section
+    visual_markers = extract_product_features(product_description)
+    if visual_markers:
+        feature_requirements = "CRITICAL PRODUCT FEATURES THAT MUST BE VISIBLE:\n"
+        for marker in visual_markers:
+            feature_requirements += f"• {marker}\n"
+        feature_requirements += "\nThese features are ESSENTIAL to the product's identity and must be prominently depicted in the visual prompt."
+        feature_emphasis = "Ensure ALL the critical product features listed above are explicitly described in the product description."
+    else:
+        feature_requirements = ""
+        feature_emphasis = ""
+
     # Build prompt
     prompt = CREATIVE_GENERATION_PROMPT_TEMPLATE.format(
         platform=platform,
@@ -484,10 +644,12 @@ def generate_creative_prompts(
         creative_style=creative_style,
         messaging_angle=messaging_angle,
         product_description=product_description,
+        feature_requirements=feature_requirements,
         brand_guidelines=brand_guidelines,
         value_props=", ".join(value_props) if value_props else "Not specified",
         themes=", ".join(themes) if themes else "Not specified",
-        demographics=demographics_str
+        demographics=demographics_str,
+        feature_emphasis=feature_emphasis
     )
 
     # Generate creative prompts
@@ -584,6 +746,17 @@ def generate_creative_prompts_batch(
     product_description = user_inputs.get("product_description", "Product information not provided")
     brand_guidelines = user_inputs.get("brand_guidelines", "No specific brand guidelines provided. Use clean, professional aesthetic.")
 
+    # Extract product features for all combinations
+    visual_markers = extract_product_features(product_description)
+    if visual_markers:
+        feature_requirements = "\n\nCRITICAL PRODUCT FEATURES THAT MUST BE VISIBLE IN ALL CREATIVES:\n"
+        for marker in visual_markers:
+            feature_requirements += f"• {marker}\n"
+        feature_requirements += "\nThese features are ESSENTIAL to the product's identity and must be prominently depicted in EVERY visual prompt.\n"
+        product_description_enhanced = product_description + feature_requirements
+    else:
+        product_description_enhanced = product_description
+
     # Build detailed combination descriptions
     combinations_details = []
     for idx, combo in enumerate(test_combinations, 1):
@@ -604,12 +777,12 @@ COMBINATION {idx} (ID: {combo_id}):
 
     combinations_details_str = "\n".join(combinations_details)
 
-    # Build prompt
+    # Build prompt with enhanced product description
     prompt = CREATIVE_BATCH_GENERATION_PROMPT_TEMPLATE.format(
         num_combinations=len(test_combinations),
         phase_name=phase_name,
         phase_description=phase_description if phase_description else f"Testing combinations for {phase_name}",
-        product_description=product_description,
+        product_description=product_description_enhanced,
         brand_guidelines=brand_guidelines,
         value_props=", ".join(value_props) if value_props else "Not specified",
         themes=", ".join(themes) if themes else "Not specified",
