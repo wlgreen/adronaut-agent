@@ -224,7 +224,6 @@ class GeminiClient:
         Returns:
             {
                 "success": True,
-                "image_data": base64_string,
                 "image_path": "output/test_creatives/images/test_creative_<timestamp>.png",
                 "model": "gemini-2.5-flash-image",
                 "error": None
@@ -232,7 +231,6 @@ class GeminiClient:
         """
         from pathlib import Path
         from datetime import datetime
-        import base64
 
         tracker = _get_progress_tracker()
 
@@ -260,9 +258,6 @@ class GeminiClient:
                 )
             )
 
-            # Extract image data (response will contain image bytes)
-            image_data = response.candidates[0].content.parts[0].inline_data.data
-
             # Save to file
             output_dir = Path("output/test_creatives/images")
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -270,54 +265,49 @@ class GeminiClient:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             image_path = output_dir / f"test_creative_{timestamp}.png"
 
-            # Determine if data is already bytes or base64-encoded
-            if isinstance(image_data, bytes):
-                # Data is already raw bytes
-                image_bytes = image_data
-                if tracker:
-                    tracker.log_message(f"  Image data is raw bytes ({len(image_bytes)} bytes)", "info")
-            else:
-                # Data is base64-encoded string
-                try:
-                    image_bytes = base64.b64decode(image_data)
-                    if tracker:
-                        tracker.log_message(f"  Decoded base64 image ({len(image_bytes)} bytes)", "info")
-                except Exception as decode_error:
-                    raise ValueError(f"Failed to decode image data: {decode_error}")
+            # Use response.parts to iterate through all response parts
+            import PIL.Image
+            import io
 
-            # Validate PNG header (should start with 89 50 4E 47)
-            if len(image_bytes) < 8:
-                raise ValueError(f"Image data too small ({len(image_bytes)} bytes)")
+            image_found = False
+            for part in response.parts:
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    try:
+                        # Get image bytes from inline_data
+                        image_bytes = part.inline_data.data
 
-            png_header = image_bytes[:8]
-            expected_png_header = b'\x89PNG\r\n\x1a\n'
+                        if not image_bytes or len(image_bytes) == 0:
+                            continue
 
-            if png_header != expected_png_header:
-                # Log the actual header for debugging
-                header_hex = ' '.join(f'{b:02x}' for b in png_header)
-                if tracker:
-                    tracker.log_message(f"  ⚠ Warning: Invalid PNG header: {header_hex}", "warning")
-                    tracker.log_message(f"  ⚠ Expected: 89 50 4e 47 0d 0a 1a 0a", "warning")
+                        if tracker:
+                            tracker.log_message(f"  Found image data: {len(image_bytes):,} bytes", "info")
 
-            # Save image bytes to file
-            with open(image_path, "wb") as f:
-                f.write(image_bytes)
+                        # Convert bytes to PIL Image
+                        image = PIL.Image.open(io.BytesIO(image_bytes))
+                        image_found = True
 
-            # Verify saved file can be opened as PNG
-            try:
-                import PIL.Image
-                with PIL.Image.open(image_path) as img:
-                    if tracker:
-                        tracker.log_message(f"  ✓ Verified PNG: {img.size[0]}x{img.size[1]}", "success")
-            except Exception as verify_error:
-                raise ValueError(f"Saved image cannot be opened as PNG: {verify_error}")
+                        # Save the image
+                        image.save(str(image_path), format="PNG")
+
+                        # Verify saved file
+                        file_size = image_path.stat().st_size
+                        if tracker:
+                            tracker.log_message(f"  ✓ Image verified: {image.size[0]}x{image.size[1]} pixels, {file_size:,} bytes", "success")
+
+                        break
+                    except Exception as e:
+                        if tracker:
+                            tracker.log_message(f"  ⚠ Failed to process part: {str(e)}", "warning")
+                        continue
+
+            if not image_found:
+                raise ValueError("No image data found in response. Response may not contain generated image.")
 
             if tracker:
                 tracker.log_message(f"✓ Image saved: {image_path}", "success")
 
             return {
                 "success": True,
-                "image_data": image_data,
                 "image_path": str(image_path),
                 "model": "gemini-2.5-flash-image",
                 "error": None
@@ -329,7 +319,6 @@ class GeminiClient:
 
             return {
                 "success": False,
-                "image_data": None,
                 "image_path": None,
                 "model": "gemini-2.5-flash-image",
                 "error": str(e)
