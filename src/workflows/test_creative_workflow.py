@@ -402,12 +402,74 @@ def run_test_creative_workflow(
     return final_result
 
 
+def _make_json_serializable(obj, seen=None):
+    """
+    Recursively convert an object to be JSON serializable, handling circular references.
+
+    Args:
+        obj: Object to convert
+        seen: Set of object IDs already seen (for circular reference detection)
+
+    Returns:
+        JSON-serializable version of the object
+    """
+    if seen is None:
+        seen = set()
+
+    # Get object ID to detect circular references
+    obj_id = id(obj)
+
+    # If we've seen this object before, it's a circular reference
+    if obj_id in seen:
+        return "<circular reference>"
+
+    # Handle None, primitives, and strings
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+
+    # Handle Path objects
+    if isinstance(obj, Path):
+        return str(obj)
+
+    # Mark this object as seen
+    seen.add(obj_id)
+
+    try:
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                try:
+                    result[str(key)] = _make_json_serializable(value, seen.copy())
+                except Exception:
+                    result[str(key)] = str(value)
+            return result
+
+        # Handle lists and tuples
+        elif isinstance(obj, (list, tuple)):
+            result = []
+            for item in obj:
+                try:
+                    result.append(_make_json_serializable(item, seen.copy()))
+                except Exception:
+                    result.append(str(item))
+            return result
+
+        # For other types, try to convert to string
+        else:
+            return str(obj)
+
+    finally:
+        # Remove from seen set when done processing
+        seen.discard(obj_id)
+
+
 def save_test_creative_results(
     results: Dict[str, Any],
     output_path: Optional[str] = None
 ) -> str:
     """
-    Save test creative results to JSON file.
+    Save test creative results to JSON file with circular reference handling.
 
     Args:
         results: Workflow results from run_test_creative_workflow
@@ -416,6 +478,9 @@ def save_test_creative_results(
     Returns:
         Path to saved file
     """
+
+    # Convert to JSON-serializable format, handling circular references
+    safe_results = _make_json_serializable(results)
 
     # Determine output path
     if not output_path:
@@ -430,6 +495,6 @@ def save_test_creative_results(
 
     # Save to file
     with open(output_path, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(safe_results, f, indent=2)
 
     return str(output_path)
