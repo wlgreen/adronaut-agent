@@ -99,6 +99,8 @@ python cli.py deploy-to-meta --config-path campaign_eco-bottle-001_v0.json --dry
 
 And include an image via `meta.creative_specs.image_url` or `image_path`.
 
+By default, if you don’t provide `creative_assets`, the deploy step will synthesize **3 image creatives** for a quick demo.
+
 ### Monitor Meta
 
 ```bash

@@ -244,6 +244,8 @@ class MetaAdsAPI:
 
         if image_path:
             # Upload from local file
+            if not os.path.exists(image_path):
+                raise MetaAdsError(f"Image file not found: {image_path}")
             with open(image_path, 'rb') as f:
                 files = {'filename': f}
                 response = self._make_api_call(endpoint, method="POST", files=files)
@@ -1018,18 +1020,29 @@ class MetaAdsAPI:
         ad_ids: List[str] = []
 
         creative_assets = config.get("creative_assets", [])
-        if not creative_assets:
-            print("   ℹ️  No creative assets provided in config")
-        elif not self.page_id:
+        if not self.page_id:
             print("   ⚠️  META_PAGE_ID not set - skipping creative/ad creation")
         else:
             # Allow either pre-generated image assets OR a shared default from meta.creative_specs
-            default_link = config.get("meta", {}).get("creative_specs", {}).get("link", "https://example.com")
-            default_cta = config.get("meta", {}).get("creative_specs", {}).get("call_to_action", "SHOP_NOW")
-            default_image_url = config.get("meta", {}).get("creative_specs", {}).get("image_url")
-            default_image_path = config.get("meta", {}).get("creative_specs", {}).get("image_path")
+            creative_specs = config.get("meta", {}).get("creative_specs", {})
+            default_link = creative_specs.get("link", "https://example.com")
+            default_cta = creative_specs.get("call_to_action", "SHOP_NOW")
+            default_image_url = creative_specs.get("image_url")
+            default_image_path = creative_specs.get("image_path")
 
-            for idx, asset in enumerate(creative_assets):
+            # If caller didn't provide per-creative assets, synthesize 3 creatives for demo.
+            if not creative_assets:
+                headline_base = creative_specs.get("headline", "Limited Time Offer")
+                primary_base = creative_specs.get("primary_text", "Check out our product!")
+
+                creative_assets = [
+                    {"combo_id": "auto_1", "headline": f"{headline_base}", "primary_text": f"{primary_base}"},
+                    {"combo_id": "auto_2", "headline": f"{headline_base} (2)", "primary_text": f"{primary_base} (2)"},
+                    {"combo_id": "auto_3", "headline": f"{headline_base} (3)", "primary_text": f"{primary_base} (3)"},
+                ]
+                print("   ℹ️  No creative_assets provided; generating 3 default creatives for demo")
+
+            for idx, asset in enumerate(creative_assets[:3]):
                 # Supported fields (MVP):
                 # - headline / primary_text / link / call_to_action
                 # - image_url or image_path (required for real creatives)

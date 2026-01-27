@@ -71,6 +71,8 @@ To create actual ads (not just campaign + ad set), you must provide:
 
 By default, everything is created in **PAUSED** state for safety.
 
+If you don’t provide `creative_assets`, deploy will synthesize **3 creatives** using `meta.creative_specs.headline/primary_text` and the shared image.
+
 ---
 
 ## 3. Monitor Meta (Status + Insights)
