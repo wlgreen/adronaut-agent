@@ -12,6 +12,7 @@ from ..modules.insight import generate_insights_and_strategy
 from ..modules.campaign import generate_campaign_config
 from ..modules.reflection import analyze_experiment_results, generate_patch_strategy
 from .state import AgentState, load_project_into_state, state_to_project_dict
+from ..llm.gemini import get_gemini
 from ..utils.progress import get_progress_tracker
 
 

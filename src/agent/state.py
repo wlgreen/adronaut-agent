@@ -27,6 +27,15 @@ class AgentState(TypedDict):
     decision_reasoning: Optional[str]
     next_action: Optional[str]  # Next node to execute
 
+    # ===== Plan / Execute / Verify (Agentic mode) =====
+    plan: Optional[Dict[str, Any]]  # {'objective': str, 'steps': [...], 'version': int}
+    current_step_id: Optional[str]  # step id currently executing
+    plan_step_index: int  # index into plan['steps']
+    artifacts: Dict[str, Any]  # step_id -> outputs/artifacts
+    verification: Dict[str, Any]  # last verification result
+    requires_approval: bool
+    approval_status: Optional[str]  # None | 'pending' | 'approved' | 'rejected'
+
     # ===== Flow Tracking (for resumption) =====
     last_completed_node: Optional[str]  # Last successfully completed node
     completed_nodes: List[str]  # Ordered history of all completed nodes
@@ -105,6 +114,15 @@ def create_initial_state(
         decision_reasoning=None,
         next_action=None,
 
+        # Plan/execute/verify
+        plan=None,
+        current_step_id=None,
+        plan_step_index=0,
+        artifacts={},
+        verification={},
+        requires_approval=False,
+        approval_status=None,
+
         # Flow tracking
         last_completed_node=None,
         completed_nodes=[],
@@ -174,6 +192,14 @@ def load_project_into_state(
     state["flow_status"] = project_data.get("flow_status", "not_started")
     state["current_executing_node"] = project_data.get("current_executing_node")
 
+    # Load plan/execute/verify state (if present in DB; otherwise defaults)
+    state["plan"] = project_data.get("plan")
+    state["plan_step_index"] = project_data.get("plan_step_index", 0)
+    state["artifacts"] = project_data.get("artifacts", {})
+    state["verification"] = project_data.get("verification", {})
+    state["requires_approval"] = project_data.get("requires_approval", False)
+    state["approval_status"] = project_data.get("approval_status")
+
     # Load accumulated data
     state["historical_data"] = project_data.get("historical_data", {})
     state["market_data"] = project_data.get("market_data", {})
@@ -215,6 +241,14 @@ def state_to_project_dict(state: AgentState, include_knowledge_facts: bool = Tru
         "project_id": state["project_id"],
         "current_phase": state["current_phase"],
         "iteration": state["iteration"],
+
+        # Plan/execute/verify (optional, for future schema)
+        "plan": state.get("plan"),
+        "plan_step_index": state.get("plan_step_index", 0),
+        "artifacts": state.get("artifacts", {}),
+        "verification": state.get("verification", {}),
+        "requires_approval": state.get("requires_approval", False),
+        "approval_status": state.get("approval_status"),
 
         # Flow tracking
         "last_completed_node": state.get("last_completed_node"),
