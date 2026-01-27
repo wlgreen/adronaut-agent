@@ -5,6 +5,7 @@ An intelligent autonomous agent that transforms campaign data into optimized adv
 ## Features
 
 - **Intelligent Routing**: LLM-based decision making determines whether to initialize, reflect, or enrich based on uploaded data
+- **Meta Deployment (Real)**: Can create **campaign + ad set + creatives + ads** in Meta Ads (safe default: **PAUSED**)
 - **Auto-Discovery**: Minimal input required - agent infers product context, competitors, and benchmarks
 - **Sequential Experiments**: Designs and documents 3-week experiment plans (platform, audience, creative tests)
 - **Multi-Session Support**: Full context persistence across sessions for long-running optimization cycles
@@ -80,6 +81,32 @@ python cli.py run --project-id eco-bottle-001
 python cli.py run --project-id eco-bottle-001
 > Files: data/week2_results.csv
 ```
+
+### Deploy to Meta (creates real objects, default PAUSED)
+
+```bash
+# Create campaign + ad set + (optionally) creatives + ads
+python cli.py deploy-to-meta --config-path campaign_eco-bottle-001_v0.json
+
+# Test mode (logs API calls, creates nothing)
+python cli.py deploy-to-meta --config-path campaign_eco-bottle-001_v0.json --dry-run
+```
+
+**To create actual creatives/ads**, set:
+- `META_ACCESS_TOKEN`
+- `META_AD_ACCOUNT_ID` (act_...)
+- `META_PAGE_ID`
+
+And include an image via `meta.creative_specs.image_url` or `image_path`.
+
+### Monitor Meta
+
+```bash
+python cli.py monitor-meta --campaign-id <campaign_id> --since 2026-01-01 --until 2026-01-07
+# or
+python cli.py monitor-meta --deployment-result campaign_eco-bottle-001_v0_deployment_result.json --since 2026-01-01 --until 2026-01-07
+```
+
 
 ### File Formats
 
