@@ -106,14 +106,19 @@ Competitor A,Water Bottles,22.5,2.8
 
 ### How It Works
 
-1. **Upload Files**: Agent analyzes file type (historical, experiment results, enrichment)
-2. **Intelligent Routing**: LLM decides next action:
-   - **Initialize**: New project → data collection → strategy → campaign setup
-   - **Reflect**: Experiment results → performance analysis → optimization patches
-   - **Enrich**: Additional data → strategy update → config adjustment
-3. **Execute Flow**: Runs appropriate node sequence
-4. **Save State**: Persists everything to database
-5. **Output**: Complete campaign configuration saved as JSON
+The system supports an **agentic Plan → Execute → Verify** loop (built on LangGraph), while still using routing signals (initialize/reflect/enrich) to choose the right high-level objective.
+
+1. **Upload Files**: Analyze file type (historical, experiment results, enrichment)
+2. **Route (high-level intent)**: decide the objective:
+   - **Initialize**: new project → build strategy + first config
+   - **Reflect**: results uploaded → analyze + propose patch
+   - **Enrich**: new context → refresh strategy/config
+3. **Plan**: planning agent produces a structured plan (steps + success criteria)
+4. **Execute**: executor runs one step at a time (reusing existing modules: discovery/data_collection/insight/creative/campaign/reflection/adjustment)
+5. **Verify**: verifier checks outputs vs criteria; on failure it triggers re-plan (MVP: simple retry/replan)
+6. **Save**: state + artifacts persisted for resumption
+
+Output includes campaign configuration + optional artifacts (e.g., creative prompts) saved as JSON.
 
 ### Example Output
 
