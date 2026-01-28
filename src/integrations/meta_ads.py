@@ -244,11 +244,13 @@ class MetaAdsAPI:
 
         if image_path:
             # Upload from local file
-            if not os.path.exists(image_path):
-                raise MetaAdsError(f"Image file not found: {image_path}")
-            with open(image_path, 'rb') as f:
-                files = {'filename': f}
-                response = self._make_api_call(endpoint, method="POST", files=files)
+            # Avoid pre-checking os.path.exists so tests can mock `open()` cleanly.
+            try:
+                with open(image_path, 'rb') as f:
+                    files = {'filename': f}
+                    response = self._make_api_call(endpoint, method="POST", files=files)
+            except FileNotFoundError as e:
+                raise MetaAdsError(f"Image file not found: {image_path}") from e
         elif image_url:
             # Upload from URL
             data = {'url': image_url}

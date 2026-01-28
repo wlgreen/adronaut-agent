@@ -21,3 +21,6 @@ venv/
 
 # Campaign output files
 campaign_*.json
+
+# Local run artifacts
+snapshots/
