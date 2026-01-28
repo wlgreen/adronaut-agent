@@ -1,22 +1,26 @@
 import os
 
-from src.storage.local_checkpoint import checkpoint_path, load_checkpoint, save_checkpoint
+from src.storage.local_checkpoint import (
+    full_state_path,
+    load_full_state,
+    save_full_state,
+)
 
 
-def test_save_and_load_checkpoint(tmp_path, monkeypatch):
+def test_save_and_load_full_state(tmp_path, monkeypatch):
     monkeypatch.setenv("ADRONAUT_CHECKPOINT_DIR", str(tmp_path))
 
     project_id = "proj_123"
     state = {"project_id": project_id, "foo": {"bar": 1}}
 
-    path = save_checkpoint(project_id, state)
+    path = save_full_state(project_id, state)
     assert path.exists()
-    assert path == checkpoint_path(project_id)
+    assert path == full_state_path(project_id)
 
-    loaded = load_checkpoint(project_id)
+    loaded = load_full_state(project_id)
     assert loaded == state
 
 
-def test_load_checkpoint_missing_returns_none(tmp_path, monkeypatch):
+def test_load_full_state_missing_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv("ADRONAUT_CHECKPOINT_DIR", str(tmp_path))
-    assert load_checkpoint("does_not_exist") is None
+    assert load_full_state("does_not_exist") is None

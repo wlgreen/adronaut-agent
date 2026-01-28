@@ -7,7 +7,13 @@ from typing import Dict, Any
 from functools import wraps
 from tavily import TavilyClient
 from ..database.persistence import ProjectPersistence, SessionPersistence, CyclePersistence
-from ..storage.local_checkpoint import load_checkpoint, save_checkpoint
+from ..storage.local_checkpoint import load_full_state, save_full_state
+
+
+def _db_enabled() -> bool:
+    # Local-only mode: set ADRONAUT_DISABLE_DB=1
+    return os.environ.get("ADRONAUT_DISABLE_DB", "0") not in ("1", "true", "True")
+
 from ..modules.data_loader import DataLoader
 from ..modules.insight import generate_insights_and_strategy
 from ..modules.campaign import generate_campaign_config
@@ -58,9 +64,10 @@ def track_node(func):
             if node_name != "save_state" and result.get("project_id"):
                 try:
                     project_data = state_to_project_dict(result, include_knowledge_facts=True)
-                    ProjectPersistence.save_project(project_data)
+                    if _db_enabled():
+                        ProjectPersistence.save_project(project_data)
                     try:
-                        save_checkpoint(result["project_id"], project_data)
+                        save_full_state(result["project_id"], dict(result))
                     except Exception as checkpoint_error:
                         tracker.log_message(f"⚠ Local checkpoint save failed: {str(checkpoint_error)}", "warning")
                     tracker.log_message(f"✓ Auto-saved state after {node_name}", "info")
@@ -69,9 +76,10 @@ def track_node(func):
                     if "knowledge_facts" in str(save_error):
                         try:
                             project_data = state_to_project_dict(result, include_knowledge_facts=False)
-                            ProjectPersistence.save_project(project_data)
+                            if _db_enabled():
+                                ProjectPersistence.save_project(project_data)
                             try:
-                                save_checkpoint(result["project_id"], project_data)
+                                save_full_state(result["project_id"], dict(result))
                             except Exception as checkpoint_error:
                                 tracker.log_message(f"⚠ Local checkpoint save failed: {str(checkpoint_error)}", "warning")
                             tracker.log_message(f"✓ Auto-saved state after {node_name} (without knowledge_facts)", "info")
@@ -91,9 +99,10 @@ def track_node(func):
             # Try to save failed state
             try:
                 project_data = state_to_project_dict(state, include_knowledge_facts=False)
-                ProjectPersistence.save_project(project_data)
+                if _db_enabled():
+                    ProjectPersistence.save_project(project_data)
                 try:
-                    save_checkpoint(state["project_id"], project_data)
+                    save_full_state(state["project_id"], dict(state))
                 except Exception as checkpoint_error:
                     tracker.log_message(f"⚠ Local checkpoint save failed: {str(checkpoint_error)}", "warning")
                 tracker.log_message(f"✓ Saved failed state after {node_name}", "info")
@@ -120,19 +129,33 @@ def load_context_node(state: AgentState) -> AgentState:
     """
     project_id = state["project_id"]
 
-    # Try to load project from database first
-    project_data = ProjectPersistence.load_project(project_id)
+    project_data = None
 
-    # Fallback: local checkpoint (useful for offline resumption)
+    # Try DB first (unless disabled)
+    if _db_enabled():
+        project_data = ProjectPersistence.load_project(project_id)
+
+    # Fallback: local full-state checkpoint (preferred for local-only resumption)
     if not project_data:
-        checkpoint = load_checkpoint(project_id)
-        if checkpoint:
-            project_data = checkpoint
-            state["messages"].append(f"Loaded project from local checkpoint: {project_id}")
+        checkpoint_state = load_full_state(project_id)
+        if checkpoint_state:
+            # Merge: prefer checkpoint, but keep any new uploaded_files passed in.
+            incoming_uploaded = state.get("uploaded_files") or []
+            state.clear()
+            state.update(checkpoint_state)
+            if incoming_uploaded:
+                state["uploaded_files"] = incoming_uploaded
+                # New session uploads should trigger fresh analysis
+                state["file_analyses"] = []
+            state.setdefault("messages", []).append(f"Loaded project from local checkpoint: {project_id}")
+            project_data = {"_loaded_from": "local_full_state"}
 
     if project_data:
-        # Project exists, load it into state
-        state = load_project_into_state(state, project_data)
+        # Project exists, load it into state (unless we already loaded full state from checkpoint)
+        if project_data.get("_loaded_from") != "local_full_state":
+            state = load_project_into_state(state, project_data)
+        else:
+            state["project_loaded"] = True
         state["messages"].append(f"Loaded existing project: {project_id}")
         state["session_num"] = len(project_data.get("config_history", [])) + 1
 
