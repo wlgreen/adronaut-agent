@@ -15,6 +15,7 @@ from typing import Dict
 from .actions import build_action_registry, list_available_actions
 from .state import AgentState
 from .planning import default_plan_template, normalize_todo_list
+from .step_schema import sanitize_step
 from ..llm import gemini as gemini_mod
 from ..storage.analysis_store import summarize_cached_insights_for_planner
 
@@ -270,8 +271,17 @@ def execute_step_node(state: AgentState) -> AgentState:
         return state
 
     step = steps[idx]
-    step_id = step.get("id", f"step_{idx}")
     action = step.get("action")
+
+    # Sanitize step args to a stable schema
+    if isinstance(step, dict) and action:
+        step = sanitize_step(action, step)
+        steps[idx] = step
+        # keep plan consistent
+        if state.get("plan") and isinstance(state["plan"].get("steps"), list):
+            state["plan"]["steps"] = steps
+
+    step_id = step.get("id", f"step_{idx}")
 
     state["current_step_id"] = step_id
     state.setdefault("artifacts", {})

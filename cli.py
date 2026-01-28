@@ -667,6 +667,10 @@ def run_command(args):
     # Get or create project (handles both UUID and name)
     project_id = get_or_create_project(args.project_id)
 
+    # Convenience: allow CLI flag to approve pending steps
+    if getattr(args, "approve", False):
+        os.environ["ADRONAUT_APPROVE"] = "1"
+
     # Check if project has incomplete flow (DB mode only)
     if os.environ.get("ADRONAUT_DISABLE_DB", "0") in ("1", "true", "True"):
         project = None
@@ -1883,6 +1887,11 @@ def main():
         "--restart",
         action="store_true",
         help="Force restart flow even if resumption is possible (clears flow state)"
+    )
+    run_parser.add_argument(
+        "--approve",
+        action="store_true",
+        help="Approve any pending approval-gated step and continue (local-only UX helper)"
     )
     run_parser.add_argument(
         "--inputs",

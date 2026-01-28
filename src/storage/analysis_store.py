@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .paths import project_analysis_dir, project_inputs_dir
+from .inputs_hash import compute_inputs_hash
 
 
 def save_file_analyses(project_id: str, analyses: List[Dict[str, Any]]) -> Path:
@@ -21,8 +22,36 @@ def save_uploaded_files_metadata(project_id: str, uploaded_files: List[Dict[str,
     d = project_inputs_dir(project_id)
     d.mkdir(parents=True, exist_ok=True)
     p = d / "metadata.json"
-    p.write_text(json.dumps({"uploaded_files": uploaded_files}, indent=2, sort_keys=True), encoding="utf-8")
+    payload = {"uploaded_files": uploaded_files, "inputs_hash": compute_inputs_hash(uploaded_files)}
+    p.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return p
+
+
+def inputs_hash_path(project_id: str) -> Path:
+    return project_analysis_dir(project_id) / "derived" / "inputs_hash.json"
+
+
+def save_inputs_hash(project_id: str, uploaded_files: List[Dict[str, Any]]) -> Path:
+    d = project_analysis_dir(project_id) / "derived"
+    d.mkdir(parents=True, exist_ok=True)
+    p = inputs_hash_path(project_id)
+    payload = {"inputs_hash": compute_inputs_hash(uploaded_files)}
+    p.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return p
+
+
+def load_inputs_hash(project_id: str) -> Optional[str]:
+    p = inputs_hash_path(project_id)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            v = data.get("inputs_hash")
+            return v if isinstance(v, str) else None
+    except Exception:
+        return None
+    return None
 
 
 def _safe_name(storage_path: str) -> str:

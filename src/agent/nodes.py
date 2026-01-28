@@ -249,15 +249,26 @@ def load_context_node(state: AgentState) -> AgentState:
             state.update(checkpoint_state)
 
             # If new inputs are provided (or differ), invalidate stale planning/analysis.
-            if incoming_uploaded and incoming_uploaded != prev_uploaded:
-                state["uploaded_files"] = incoming_uploaded
-                state["file_analyses"] = []
-                state["plan"] = None
-                state["plan_step_index"] = 0
-                state["todo_printed"] = False
-                state.setdefault("messages", []).append("New uploaded files detected; cleared plan + analyses")
-            elif incoming_uploaded:
-                state["uploaded_files"] = incoming_uploaded
+            if incoming_uploaded:
+                from ..storage.inputs_hash import compute_inputs_hash
+                from ..storage.analysis_store import load_inputs_hash
+
+                incoming_hash = compute_inputs_hash(incoming_uploaded)
+                saved_hash = load_inputs_hash(project_id)
+
+                changed = incoming_uploaded != prev_uploaded
+                if saved_hash is not None and saved_hash != incoming_hash:
+                    changed = True
+
+                if changed:
+                    state["uploaded_files"] = incoming_uploaded
+                    state["file_analyses"] = []
+                    state["plan"] = None
+                    state["plan_step_index"] = 0
+                    state["todo_printed"] = False
+                    state.setdefault("messages", []).append("New uploaded files detected; cleared plan + analyses")
+                else:
+                    state["uploaded_files"] = incoming_uploaded
 
             state.setdefault("messages", []).append(f"Loaded project from local checkpoint: {project_id}")
             project_data = {"_loaded_from": "local_full_state"}
@@ -342,6 +353,7 @@ def analyze_files_node(state: AgentState) -> AgentState:
     from ..storage.analysis_store import (
         load_insights_cache,
         save_file_analyses,
+        save_inputs_hash,
         save_uploaded_files_metadata,
     )
 
@@ -472,6 +484,10 @@ def analyze_files_node(state: AgentState) -> AgentState:
             pass
         try:
             save_file_analyses(project_id, analyses)
+        except Exception:
+            pass
+        try:
+            save_inputs_hash(project_id, state.get("uploaded_files", []))
         except Exception:
             pass
 
