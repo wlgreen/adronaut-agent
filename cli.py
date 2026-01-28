@@ -531,33 +531,59 @@ def run_command(args):
                 else:
                     print("✓ Forcing fresh start (--restart flag used)\n")
 
-    # Prompt for files or URLs
-    print("Upload files or product URLs (comma-separated):")
-    print("  Example: data/historical.csv,data/experiments.csv")
-    print("  Or mix: https://mysite.com/product,data/historical.csv")
+    # Prompt for files/folders or URLs
+    print("Upload local files/folders or product URLs (comma-separated):")
+    print("  Examples:")
+    print("    ./data/historical.csv")
+    print("    ./data/ (folder; recursive)")
+    print("    https://mysite.com/product")
+    print("  Or mix: https://mysite.com/product,./data/")
     print()
-    input_str = input("Files or URLs: ").strip()
+    input_str = input("Files/Folders/URLs: ").strip()
 
     if not input_str:
         print("Error: No files or URLs provided")
         return 1
 
-    # Parse inputs - separate URLs from file paths
-    inputs = [p.strip() for p in input_str.split(",")]
-    file_paths = []
+    # Parse inputs - separate URLs from local paths (files or directories)
+    inputs = [p.strip() for p in input_str.split(",") if p.strip()]
+    local_paths = []
     product_urls = []
 
     for item in inputs:
         if item.startswith('http://') or item.startswith('https://'):
             product_urls.append(item)
         else:
-            file_paths.append(item)
+            local_paths.append(item)
 
-    # Validate files exist
-    for path in file_paths:
-        if not Path(path).exists():
-            print(f"Error: File not found: {path}")
+    # Expand directories into file lists (recursive), ignore hidden files/dirs
+    def _is_hidden(p: Path) -> bool:
+        return any(part.startswith('.') for part in p.parts)
+
+    file_paths: list[str] = []
+    for pth in local_paths:
+        p = Path(pth).expanduser()
+        if not p.exists():
+            print(f"Error: Path not found: {pth}")
             return 1
+        if p.is_dir():
+            for f in p.rglob('*'):
+                if f.is_file() and not _is_hidden(f):
+                    file_paths.append(str(f))
+        elif p.is_file():
+            if not _is_hidden(p):
+                file_paths.append(str(p))
+        else:
+            print(f"Error: Unsupported path type: {pth}")
+            return 1
+
+    # De-dupe while preserving order
+    seen = set()
+    file_paths = [x for x in file_paths if not (x in seen or seen.add(x))]
+
+    if not file_paths and not product_urls:
+        print("Error: No valid files/folders/URLs provided")
+        return 1
 
     # Show what we found
     if product_urls:
@@ -565,20 +591,24 @@ def run_command(args):
         for url in product_urls:
             print(f"  • {url}")
     if file_paths:
-        print(f"\nDetected {len(file_paths)} file(s):")
+        print(f"\nDetected {len(file_paths)} file(s) (from files/folders):")
+        for fp in file_paths[:10]:
+            print(f"  • {fp}")
+        if len(file_paths) > 10:
+            print(f"  ... +{len(file_paths) - 10} more")
 
-    # Upload files to Supabase Storage (if any)
+    # Copy files into local storage (no Supabase)
     uploaded_files = []
 
     if file_paths:
-        print(f"\nUploading {len(file_paths)} file(s) to storage...")
+        print(f"\nStoring {len(file_paths)} file(s) locally...")
 
         try:
             from src.storage.file_manager import upload_file
 
             for path in file_paths:
                 filename = Path(path).name
-                print(f"  Uploading {filename}...", end=" ")
+                print(f"  Storing {filename}...", end=" ")
 
                 storage_path = upload_file(path, project_id)
 
@@ -590,7 +620,7 @@ def run_command(args):
                 print("✓")
 
         except Exception as e:
-            print(f"\nError uploading files: {str(e)}")
+            print(f"\nError storing files: {str(e)}")
             return 1
 
     print(f"\nStarting agent for project: {project_id}")

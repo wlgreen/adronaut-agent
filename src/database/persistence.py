@@ -1,192 +1,186 @@
-"""
-Persistence layer for loading and saving project state
+"""Local persistence layer (filesystem-based).
+
+This repo originally used Supabase for persistence. For the demo flow we support
+"local-only" mode: all project/session/cycle state is stored on disk.
+
+Storage layout (default root: ./local_storage):
+- local_storage/index.json
+- local_storage/projects/<project_id>/project.json
+- local_storage/projects/<project_id>/sessions/<session_id>.json
+- local_storage/projects/<project_id>/cycles/<session_id>/<cycle_num>_<node>.json
+
+The public interface of ProjectPersistence/SessionPersistence/CyclePersistence
+matches the previous Supabase-backed version.
 """
 
-from typing import Optional, Dict, Any, List
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime
-import uuid
-from .client import get_db
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from ..local_storage import (
+    append_index_session,
+    ensure_dirs,
+    generate_project_id,
+    generate_session_id,
+    paths,
+    update_index_project,
+)
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _read_json(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    import json
+
+    return json.loads(path.read_text())
+
+
+def _write_json(path: Path, obj: Dict[str, Any]) -> None:
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False))
+    tmp.replace(path)
 
 
 class ProjectPersistence:
-    """Handle all database operations for projects"""
+    """Handle all persistence operations for projects (local filesystem)."""
 
     @staticmethod
     def load_project(project_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Load project state from database
-
-        Args:
-            project_id: UUID of the project
-
-        Returns:
-            Project data as dictionary, or None if not found
-        """
-        db = get_db()
-
-        response = db.table("projects").select("*").eq("project_id", project_id).execute()
-
-        if response.data and len(response.data) > 0:
-            return response.data[0]
-
-        return None
+        ensure_dirs(project_id)
+        p = paths()
+        return _read_json(p.project_json(project_id))
 
     @staticmethod
-    def create_project(
-        user_id: str,
-        project_name: str,
-        product_description: str,
-        target_budget: float
-    ) -> str:
-        """
-        Create a new project
+    def create_project(user_id: str, project_name: str, product_description: str, target_budget: float) -> str:
+        project_id = generate_project_id()
+        ensure_dirs(project_id)
+        p = paths()
 
-        Args:
-            user_id: User identifier
-            project_name: Name of the project
-            product_description: Description of the product
-            target_budget: Target daily budget
-
-        Returns:
-            project_id: UUID of created project
-        """
-        db = get_db()
-
-        project_data = {
+        project_data: Dict[str, Any] = {
+            "project_id": project_id,
             "user_id": user_id,
             "project_name": project_name,
             "product_description": product_description,
             "target_budget": target_budget,
             "current_phase": "initialized",
             "iteration": 0,
+            "created_at": _utc_now_iso(),
+            "updated_at": _utc_now_iso(),
+            # Flow fields (kept for compatibility)
+            "flow_status": "not_started",
+            "last_completed_node": None,
+            "completed_nodes": [],
+            "current_executing_node": None,
         }
 
-        response = db.table("projects").insert(project_data).execute()
-
-        return response.data[0]["project_id"]
+        _write_json(p.project_json(project_id), project_data)
+        update_index_project(project_id, project_name, status={"flow_status": "not_started"})
+        return project_id
 
     @staticmethod
     def save_project(project_data: Dict[str, Any]) -> None:
-        """
-        Save/update project state
-
-        Args:
-            project_data: Complete project state dictionary
-        """
-        db = get_db()
-
         project_id = project_data["project_id"]
+        ensure_dirs(project_id)
+        p = paths()
 
-        # updated_at will be automatically updated by trigger
-        db.table("projects").update(project_data).eq("project_id", project_id).execute()
+        project_data = {**project_data}
+        project_data["updated_at"] = _utc_now_iso()
+        _write_json(p.project_json(project_id), project_data)
+
+        update_index_project(
+            project_id,
+            project_data.get("project_name", project_id),
+            status={
+                "flow_status": project_data.get("flow_status"),
+                "current_phase": project_data.get("current_phase"),
+                "iteration": project_data.get("iteration"),
+                "last_completed_node": project_data.get("last_completed_node"),
+            },
+        )
 
     @staticmethod
     def update_project_field(project_id: str, field: str, value: Any) -> None:
-        """
-        Update a specific field in the project
-
-        Args:
-            project_id: UUID of the project
-            field: Field name to update
-            value: New value
-        """
-        db = get_db()
-
-        db.table("projects").update({field: value}).eq("project_id", project_id).execute()
+        proj = ProjectPersistence.load_project(project_id)
+        if not proj:
+            raise ValueError(f"Project {project_id} not found")
+        proj[field] = value
+        ProjectPersistence.save_project(proj)
 
     @staticmethod
     def append_to_array_field(project_id: str, field: str, item: Any) -> None:
-        """
-        Append an item to an array field (like experiment_results, config_history)
-
-        Args:
-            project_id: UUID of the project
-            field: Array field name
-            item: Item to append
-        """
-        db = get_db()
-
-        # First get current array
-        project = ProjectPersistence.load_project(project_id)
-        if not project:
+        proj = ProjectPersistence.load_project(project_id)
+        if not proj:
             raise ValueError(f"Project {project_id} not found")
-
-        current_array = project.get(field, [])
-        if current_array is None:
-            current_array = []
-
-        # Append new item
-        current_array.append(item)
-
-        # Update
-        db.table("projects").update({field: current_array}).eq("project_id", project_id).execute()
+        current = proj.get(field) or []
+        if not isinstance(current, list):
+            current = []
+        current.append(item)
+        proj[field] = current
+        ProjectPersistence.save_project(proj)
 
 
 class SessionPersistence:
-    """Handle all database operations for sessions"""
+    """Handle all persistence operations for sessions (local filesystem)."""
 
     @staticmethod
-    def create_session(
-        project_id: str,
-        session_num: int,
-        uploaded_files: List[Dict[str, Any]]
-    ) -> str:
-        """
-        Create a new session
+    def create_session(project_id: str, session_num: int, uploaded_files: List[Dict[str, Any]]) -> str:
+        session_id = generate_session_id()
+        ensure_dirs(project_id, session_id)
+        p = paths()
 
-        Args:
-            project_id: UUID of the project
-            session_num: Session number
-            uploaded_files: List of uploaded file info
-
-        Returns:
-            session_id: UUID of created session
-        """
-        db = get_db()
-
-        session_data = {
+        data = {
+            "session_id": session_id,
             "project_id": project_id,
             "session_num": session_num,
             "uploaded_files": uploaded_files,
             "execution_status": "running",
+            "created_at": _utc_now_iso(),
+            "completed_at": None,
         }
 
-        response = db.table("sessions").insert(session_data).execute()
-
-        return response.data[0]["session_id"]
+        _write_json(p.session_json(project_id, session_id), data)
+        append_index_session(project_id, session_id, session_num, uploaded_files=uploaded_files)
+        return session_id
 
     @staticmethod
     def update_session(session_id: str, updates: Dict[str, Any]) -> None:
-        """
-        Update session data
+        # We don't have a global session index by id; scan projects quickly via index.
+        from ..local_storage import _read_json as _idx_read  # type: ignore
 
-        Args:
-            session_id: UUID of the session
-            updates: Dictionary of fields to update
-        """
-        db = get_db()
-
-        db.table("sessions").update(updates).eq("session_id", session_id).execute()
+        idx = _idx_read(paths().index_path, {"projects": {}})
+        for project_id in (idx.get("projects") or {}).keys():
+            p = paths().session_json(project_id, session_id)
+            if p.exists():
+                sess = _read_json(p) or {}
+                sess.update(updates)
+                sess["updated_at"] = _utc_now_iso()
+                _write_json(p, sess)
+                return
+        raise ValueError(f"Session {session_id} not found")
 
     @staticmethod
     def complete_session(session_id: str, status: str = "completed") -> None:
-        """
-        Mark session as completed
-
-        Args:
-            session_id: UUID of the session
-            status: Final status ('completed' or 'failed')
-        """
-        db = get_db()
-
-        db.table("sessions").update({
-            "execution_status": status,
-            "completed_at": datetime.utcnow().isoformat()
-        }).eq("session_id", session_id).execute()
+        SessionPersistence.update_session(
+            session_id,
+            {
+                "execution_status": status,
+                "completed_at": _utc_now_iso(),
+            },
+        )
 
 
 class CyclePersistence:
-    """Handle all database operations for ReAct cycles"""
+    """Log per-node cycles for debugging/traceability (local filesystem)."""
 
     @staticmethod
     def log_cycle(
@@ -198,25 +192,12 @@ class CyclePersistence:
         action: Optional[Dict[str, Any]] = None,
         observation: Optional[Dict[str, Any]] = None,
         execution_time_ms: Optional[int] = None,
-        llm_tokens_used: Optional[int] = None
+        llm_tokens_used: Optional[int] = None,
     ) -> None:
-        """
-        Log a ReAct cycle
+        ensure_dirs(project_id, session_id)
+        p = paths()
 
-        Args:
-            session_id: UUID of the session
-            project_id: UUID of the project
-            cycle_num: Cycle number
-            node_name: Name of the node
-            thought: Reasoning/thought text
-            action: Action taken (as JSON)
-            observation: Observation/result (as JSON)
-            execution_time_ms: Execution time in milliseconds
-            llm_tokens_used: Number of LLM tokens used
-        """
-        db = get_db()
-
-        cycle_data = {
+        payload = {
             "session_id": session_id,
             "project_id": project_id,
             "cycle_num": cycle_num,
@@ -226,25 +207,25 @@ class CyclePersistence:
             "observation": observation,
             "execution_time_ms": execution_time_ms,
             "llm_tokens_used": llm_tokens_used,
+            "created_at": _utc_now_iso(),
         }
 
-        db.table("react_cycles").insert(cycle_data).execute()
+        fname = f"{cycle_num:04d}_{node_name}.json"
+        out = p.cycles_dir(project_id, session_id) / fname
+        _write_json(out, payload)
 
     @staticmethod
     def get_session_cycles(session_id: str) -> List[Dict[str, Any]]:
-        """
-        Get all cycles for a session
+        # Best-effort: scan all project cycle dirs.
+        from ..local_storage import _read_json as _idx_read  # type: ignore
 
-        Args:
-            session_id: UUID of the session
-
-        Returns:
-            List of cycle records
-        """
-        db = get_db()
-
-        response = db.table("react_cycles").select("*").eq(
-            "session_id", session_id
-        ).order("cycle_num").execute()
-
-        return response.data
+        idx = _idx_read(paths().index_path, {"projects": {}})
+        cycles: List[Dict[str, Any]] = []
+        for project_id in (idx.get("projects") or {}).keys():
+            cdir = paths().project_dir(project_id) / "cycles" / session_id
+            if cdir.exists():
+                for f in sorted(cdir.glob("*.json")):
+                    obj = _read_json(f)
+                    if obj:
+                        cycles.append(obj)
+        return cycles
