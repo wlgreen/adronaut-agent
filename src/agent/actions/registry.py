@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
+from .reflection_skill import ReflectionSkill
 from .repo_search import RepoSearchSkill
 from .skills import CreativeGenerationSkill, NodeWrapperSkill
 
@@ -81,14 +82,7 @@ def build_action_registry() -> Dict[str, object]:
             verify_fn=_verify_campaign_setup,
             requires_approval_fn=_approval_campaign_or_adjustment,
         ),
-        "reflection": NodeWrapperSkill(
-            name="reflection",
-            description=(
-                "Analyze experiment_results to summarize performance deltas and populate patch/metrics context "
-                "for the next iteration."
-            ),
-            fn=agent_nodes.reflection_node,
-        ),
+        "reflection": ReflectionSkill(),
         "adjustment": NodeWrapperSkill(
             name="adjustment",
             description=(
