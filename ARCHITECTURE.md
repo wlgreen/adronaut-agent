@@ -1,7 +1,7 @@
 # Adronaut Agent - Technical Architecture
 
-**Version:** 1.0
-**Last Updated:** 2025-10-13
+**Version:** 2.0
+**Last Updated:** 2026-01-28
 **Purpose:** Comprehensive technical documentation for developers and collaborators
 
 ---
@@ -99,21 +99,13 @@ All agent logic operates on a single **AgentState** dictionary that flows throug
 - **Resumability**: Exact state restoration across sessions
 - **Debugging**: Complete audit trail via state snapshots
 
-### 2. Router-Based Workflow
+### 2. Planner-Based Workflow (router merged into planning)
 
-Instead of hardcoded branching, an **LLM-powered router** examines state to decide the next node:
-```python
-# Router examines:
-- project_loaded: bool
-- current_phase: 'initialized' | 'strategy_built' | 'awaiting_results' | 'optimizing'
-- uploaded_file_types: ['historical' | 'experiment_results' | 'enrichment']
+Routing is merged into the **planning node** (single LLM call) which produces:
+- `decision`: initialize | reflect | enrich | continue
+- `steps`: a TODO list of small executable actions
 
-# Router decides:
-- initialize: New project with historical data → full setup flow
-- reflect: Experiment results uploaded → performance analysis + optimization
-- enrich: Additional data uploaded → update strategy
-- continue: Resume incomplete flow
-```
+The graph then runs an agentic **Plan → Execute → Verify** loop.
 
 ### 3. Separation of Concerns
 
@@ -163,46 +155,35 @@ state = load_project_into_state(state, db_project)  # Restore full context
 
 ### Graph Structure
 
-The agent is defined in `src/agent/graph.py` using LangGraph's `StateGraph`:
+The agent is defined in `src/agent/graph.py` using LangGraph's `StateGraph` and a compact Plan/Execute/Verify loop:
 
 ```python
 workflow = StateGraph(AgentState)
 
-# Add nodes
 workflow.add_node("load_context", load_context_node)
 workflow.add_node("analyze_files", analyze_files_node)
-workflow.add_node("router", router_node)
-workflow.add_node("discovery", discovery_node)
-workflow.add_node("data_collection", data_collection_node)
-workflow.add_node("insight", insight_node)
-workflow.add_node("campaign_setup", campaign_setup_node)
-workflow.add_node("reflection", reflection_node)
-workflow.add_node("adjustment", adjustment_node)
+workflow.add_node("planning", planning_node)          # decision + steps
+workflow.add_node("execute_step", execute_step_node)  # dispatches to actions
+workflow.add_node("verify_step", verify_step_node)    # per-action verification
 workflow.add_node("save", save_state_node)
 
-# Set entry point
 workflow.set_entry_point("load_context")
 ```
 
+The executable capabilities are action skills registered in `src/agent/actions/registry.py` (not separate LangGraph nodes).
+
 ### Execution Paths
 
-**Initialize Path** (new project with historical data):
+High-level decisions still exist (`decision` field), but the graph always runs:
+
 ```
-load_context → analyze_files → router → discovery → data_collection →
-insight → campaign_setup → save → END
+load_context → analyze_files → planning → (execute_step ↔ verify_step)* → save → END
 ```
 
-**Reflect Path** (existing project with experiment results):
-```
-load_context → analyze_files → router → reflection → adjustment →
-save → END
-```
-
-**Enrich Path** (additional data):
-```
-load_context → analyze_files → router → discovery → data_collection →
-insight → campaign_setup → save → END
-```
+The planner chooses a step list appropriate for:
+- **initialize**: discovery → data_collection → insight → (creative_generation?) → campaign_setup → save
+- **reflect**: reflection → planning (forced by ReflectionSkill) → adjustment → save
+- **enrich**: repo_search/discovery → data_collection → insight → campaign_setup → save
 
 ### Conditional Routing
 
@@ -1474,68 +1455,57 @@ class ProjectPersistence:
 
 ## File Storage
 
-### Supabase Storage Integration
+### Local-first storage (recommended)
 
-**File:** `src/storage/file_manager.py`
+Set:
+- `ADRONAUT_HOME=~/adronaut`
+- `ADRONAUT_DISABLE_DB=1`
 
-```python
-def upload_file(local_path: str, project_id: str) -> str:
-    """
-    Upload file to Supabase Storage
-
-    Args:
-        local_path: Path to local file
-        project_id: Project UUID for organization
-
-    Returns:
-        storage_path: Supabase storage path
-    """
-    supabase = get_supabase_client()
-
-    filename = Path(local_path).name
-    storage_path = f"{project_id}/{filename}"
-
-    # Upload to 'campaign-files' bucket
-    with open(local_path, 'rb') as f:
-        supabase.storage.from_("campaign-files") \
-            .upload(storage_path, f, file_options={"upsert": "true"})
-
-    return storage_path
-
-def download_file(storage_path: str) -> bytes:
-    """Download file from Supabase Storage"""
-    supabase = get_supabase_client()
-
-    response = supabase.storage.from_("campaign-files") \
-        .download(storage_path)
-
-    return response
-
-def delete_file(storage_path: str):
-    """Delete file from Supabase Storage"""
-    supabase = get_supabase_client()
-
-    supabase.storage.from_("campaign-files") \
-        .remove([storage_path])
-```
-
-### Storage Organization
+The agent persists everything under `ADRONAUT_HOME`:
 
 ```
-campaign-files/
-├── {project_id_1}/
-│   ├── historical_campaigns.csv
-│   ├── experiment_results_week1.csv
-│   └── experiment_results_week2.csv
-├── {project_id_2}/
-│   ├── performance_data.csv
-│   └── market_benchmarks.json
-...
+$ADRONAUT_HOME/
+  global/
+  projects/
+    <project_id>/
+      inputs/
+        uploaded/                 # copies of user-provided files
+        metadata.json             # uploaded_files + inputs_hash
+      analysis/
+        file_analyses.json
+        derived/
+          inputs_hash.json
+          insights_cache/         # per-file cached insights
+          meta_watch/             # auto-watch raw payloads
+      artifacts/
+        configs/                  # campaign_vN.json + campaign_config.json
+        reports/                  # report.md
+        creatives/                # creative_prompts.json
+        deployments/              # *_deployment_result.json
+        snapshots/                # watch-meta snapshots
+      state/
+        state_full.json           # full AgentState checkpoint
+      logs/
+        node_io.jsonl             # per-node input/output debug log
 ```
+
+### Supabase Storage Integration (optional)
+
+Supabase can be used for persistence/storage, but it can be fully disabled via `ADRONAUT_DISABLE_DB=1`.
 
 ---
 
 ## Development Patterns
+
+### Adding a New Action (preferred)
+
+Most extensions should be added as **actions/skills** (not new LangGraph nodes).
+
+1. Implement a skill (wrap an existing node or create a custom class)
+2. Register it in `src/agent/actions/registry.py` with a short description + optional verify/approval hooks
+3. The planner automatically sees it via the injected `AVAILABLE ACTIONS` list
+
+(You only add new LangGraph nodes when you truly need a new lifecycle stage outside the plan loop.)
 
 ### Adding a New Node
 

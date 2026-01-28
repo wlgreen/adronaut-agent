@@ -15,10 +15,11 @@ An intelligent autonomous agent that transforms campaign data into optimized adv
 ## Architecture
 
 Built on:
-- **LangGraph**: Orchestrates multi-step agent workflow with intelligent routing
-- **Gemini 2.0 Flash**: Powers reasoning, strategy generation, and decision-making
-- **Supabase**: PostgreSQL database for persistent state and session management
-- **Tavily**: Web search for market benchmarks and competitive intelligence
+- **LangGraph**: Orchestrates a Plan → Execute → Verify loop
+- **Gemini 2.0 Flash**: Powers planning, strategy generation, and analysis
+- **Local-first persistence** (recommended for demos): checkpoints + artifacts under `ADRONAUT_HOME`
+- **Supabase** (optional): can be disabled via `ADRONAUT_DISABLE_DB=1`
+- **Tavily** (optional): web search for benchmarks/competitive intelligence
 
 ## Setup
 
@@ -50,15 +51,31 @@ cp .env.example .env
 nano .env
 ```
 
-Required environment variables:
+#### Core
 ```
 GEMINI_API_KEY=your_gemini_api_key
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_supabase_anon_key
-TAVILY_API_KEY=your_tavily_key  # Optional
 ```
 
-### 4. Setup Database
+#### Local-first demo mode (recommended)
+```
+ADRONAUT_HOME=~/adronaut
+ADRONAUT_DISABLE_DB=1
+```
+
+#### Optional: Supabase persistence (disable with ADRONAUT_DISABLE_DB=1)
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your_supabase_anon_key
+```
+
+#### Optional
+```
+TAVILY_API_KEY=your_tavily_key
+```
+
+### 4. Setup Database (optional)
+
+If you want Supabase persistence, set `SUPABASE_URL` + `SUPABASE_KEY` and:
 
 1. Go to your Supabase project SQL Editor
 2. Run the schema from `src/database/schema.sql`
@@ -70,17 +87,24 @@ TAVILY_API_KEY=your_tavily_key  # Optional
 
 ```bash
 # Session 1: Initial setup with historical data
-python cli.py run --project-id eco-bottle-001
-> Files: data/historical_campaigns.csv
+python cli.py run --project-id eco-bottle-001 --inputs ./data/historical_campaigns.csv
 
 # Session 2: Upload experiment results (after running campaigns)
-python cli.py run --project-id eco-bottle-001
-> Files: data/week1_results.csv
+python cli.py run --project-id eco-bottle-001 --inputs ./data/week1_results.csv
 
 # Session 3: Continue optimization
-python cli.py run --project-id eco-bottle-001
-> Files: data/week2_results.csv
+python cli.py run --project-id eco-bottle-001 --inputs ./data/week2_results.csv
 ```
+
+### Approval-gated steps (campaign_setup / adjustment)
+
+Some steps intentionally pause before executing (to prevent unintended changes).
+
+Resume a pending step with:
+```bash
+python cli.py run --project-id eco-bottle-001 --approve
+```
+
 
 ### Deploy to Meta (creates real objects, default PAUSED)
 
@@ -119,10 +143,23 @@ Cron-friendly monitoring that pulls **today** + **trailing 7d** insights and che
 - CPA up > 20% vs target
 
 ```bash
-python cli.py watch-meta --deployment-result campaign_eco-bottle-001_v0_deployment_result.json
+python cli.py watch-meta --deployment-result \
+  $ADRONAUT_HOME/projects/eco-bottle-001/artifacts/deployments/campaign_eco-bottle-001_v0_deployment_result.json
 ```
 
-Creates a snapshot in `snapshots/<timestamp>.json` and prints alerts in a Telegram-ready format.
+Creates a snapshot in:
+`$ADRONAUT_HOME/projects/<project_id>/artifacts/snapshots/<timestamp>.json`
+
+### Auto Watch (prepare mode)
+
+Automatically pulls metrics from the Meta API and, if guardrails breach, triggers the agent up to the approval gate.
+
+```bash
+python cli.py auto-watch --project-id eco-bottle-001 --mode prepare
+```
+
+It persists the fetched payload for debugging under:
+`$ADRONAUT_HOME/projects/<project_id>/analysis/derived/meta_watch/<timestamp>.json`
 
 ### Setup Cron
 
