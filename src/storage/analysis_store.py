@@ -68,12 +68,10 @@ def list_insights_cache_files(project_id: str) -> List[Path]:
 
 
 def summarize_cached_insights_for_planner(project_id: str, max_files: int = 3) -> str:
-    """Return a short human-readable summary of cached insights to include in planner prompt."""
+    """Return a short JSON summary of cached insights to include in planner prompt."""
     files = list_insights_cache_files(project_id)[:max_files]
-    if not files:
-        return "None"
+    out: List[Dict[str, Any]] = []
 
-    parts: List[str] = []
     for p in files:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
@@ -82,16 +80,14 @@ def summarize_cached_insights_for_planner(project_id: str, max_files: int = 3) -
         insights = (data or {}).get("insights") or {}
         strategy = insights.get("strategy") or {}
         ins = (strategy.get("insights") or {}) if isinstance(strategy, dict) else {}
-        patterns = ins.get("patterns") or []
-        strengths = ins.get("strengths") or []
-        weaknesses = ins.get("weaknesses") or []
 
-        parts.append(f"File: {p.name}")
-        if patterns:
-            parts.append(f"- patterns: {patterns[:3]}")
-        if strengths:
-            parts.append(f"- strengths: {strengths[:3]}")
-        if weaknesses:
-            parts.append(f"- weaknesses: {weaknesses[:3]}")
+        out.append(
+            {
+                "file": p.name,
+                "patterns": (ins.get("patterns") or [])[:3],
+                "strengths": (ins.get("strengths") or [])[:3],
+                "weaknesses": (ins.get("weaknesses") or [])[:3],
+            }
+        )
 
-    return "\n".join(parts) if parts else "None"
+    return json.dumps(out, indent=2) if out else "[]"

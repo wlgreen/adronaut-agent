@@ -243,12 +243,22 @@ def load_context_node(state: AgentState) -> AgentState:
         if checkpoint_state:
             # Merge: prefer checkpoint, but keep any new uploaded_files passed in.
             incoming_uploaded = state.get("uploaded_files") or []
+            prev_uploaded = checkpoint_state.get("uploaded_files") or []
+
             state.clear()
             state.update(checkpoint_state)
-            if incoming_uploaded:
+
+            # If new inputs are provided (or differ), invalidate stale planning/analysis.
+            if incoming_uploaded and incoming_uploaded != prev_uploaded:
                 state["uploaded_files"] = incoming_uploaded
-                # New session uploads should trigger fresh analysis
                 state["file_analyses"] = []
+                state["plan"] = None
+                state["plan_step_index"] = 0
+                state["todo_printed"] = False
+                state.setdefault("messages", []).append("New uploaded files detected; cleared plan + analyses")
+            elif incoming_uploaded:
+                state["uploaded_files"] = incoming_uploaded
+
             state.setdefault("messages", []).append(f"Loaded project from local checkpoint: {project_id}")
             project_data = {"_loaded_from": "local_full_state"}
 
@@ -323,7 +333,11 @@ def analyze_files_node(state: AgentState) -> AgentState:
     """
     from ..database.file_persistence import FilePersistence
     from ..storage.file_manager import download_file
-    from ..storage.analysis_store import save_file_analyses, save_uploaded_files_metadata
+    from ..storage.analysis_store import (
+        load_insights_cache,
+        save_file_analyses,
+        save_uploaded_files_metadata,
+    )
 
     project_id = state["project_id"]
     analyses = []
@@ -333,10 +347,28 @@ def analyze_files_node(state: AgentState) -> AgentState:
             storage_path = file_info["storage_path"]
             original_filename = file_info["original_filename"]
 
-            # Check if file analysis is cached in database
-            cached_record = FilePersistence.get_file_record(project_id, storage_path)
+            # Local insights cache (preferred in local-only mode)
+            local_insights = load_insights_cache(project_id, storage_path)
 
-            if cached_record and cached_record.get("file_metadata") and cached_record.get("file_type"):
+            # DB cache (optional)
+            cached_record = None
+            if _db_enabled():
+                try:
+                    cached_record = FilePersistence.get_file_record(project_id, storage_path)
+                except Exception:
+                    cached_record = None
+
+            # If we have local insights cache, we can treat this as cached
+            if local_insights is not None:
+                local_path = download_file(storage_path)
+                analysis = DataLoader.analyze_file(local_path)
+                # Don't keep full data when cached
+                analysis["data"] = []
+                analysis["cached"] = True
+                analysis["insights_cache"] = local_insights
+                state["messages"].append(f"✓ Using local cached insights for {original_filename}")
+
+            elif cached_record and cached_record.get("file_metadata") and cached_record.get("file_type"):
                 # Cache hit - check if we have cached insights or need to reload data
                 insights_cache = cached_record.get("insights_cache")
                 has_cached_insights = insights_cache is not None
@@ -402,17 +434,21 @@ def analyze_files_node(state: AgentState) -> AgentState:
                 analysis["cached"] = False
 
                 # Save metadata and file_type to database
-                FilePersistence.upsert_file_record(
-                    project_id=project_id,
-                    storage_path=storage_path,
-                    original_filename=original_filename,
-                    file_type=analysis.get("type"),
-                    file_metadata={
-                        "row_count": analysis.get("row_count"),
-                        "columns": analysis.get("columns", []),
-                        "metrics": analysis.get("metrics", {}),
-                    }
-                )
+                if _db_enabled():
+                    try:
+                        FilePersistence.upsert_file_record(
+                            project_id=project_id,
+                            storage_path=storage_path,
+                            original_filename=original_filename,
+                            file_type=analysis.get("type"),
+                            file_metadata={
+                                "row_count": analysis.get("row_count"),
+                                "columns": analysis.get("columns", []),
+                                "metrics": analysis.get("metrics", {}),
+                            }
+                        )
+                    except Exception:
+                        pass
 
                 state["messages"].append(
                     f"✓ Analyzed {original_filename}: "

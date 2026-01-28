@@ -60,8 +60,11 @@ UPLOADED FILES:
 KNOWN FACTS:
 {known_facts}
 
-CACHED INSIGHTS (from previous runs, if available):
+CACHED INSIGHTS (JSON, from previous runs if available):
 {cached_insights}
+
+REPO SEARCH SUMMARY (JSON, if available):
+{repo_search}
 
 Respond with JSON in this exact format:
 {{
@@ -99,16 +102,23 @@ def _build_planner_prompt(state: AgentState) -> str:
     known_facts = state.get("knowledge_facts", {})
     facts_str = "\n".join(
         [
-            f"- {k}: {v.get('value', '')[:50]}... (confidence: {v.get('confidence', 0):.0%})"
+            f"- {k}: {str(v.get('value', ''))[:50]}... (confidence: {v.get('confidence', 0):.0%})"
             for k, v in list(known_facts.items())[:10]
         ]
     ) or "None yet"
 
-    cached_insights = "None"
+    cached_insights = "[]"
     try:
         cached_insights = summarize_cached_insights_for_planner(state.get("project_id", ""))
     except Exception:
-        cached_insights = "None"
+        cached_insights = "[]"
+
+    repo_search = "null"
+    try:
+        rs = (state.get("knowledge_facts", {}) or {}).get("repo_search", {}).get("value")
+        repo_search = json.dumps(rs, indent=2) if rs is not None else "null"
+    except Exception:
+        repo_search = "null"
 
     return PLANNER_PROMPT_TEMPLATE.format(
         project_loaded=state.get("project_loaded", False),
@@ -120,6 +130,7 @@ def _build_planner_prompt(state: AgentState) -> str:
         file_analyses=file_analyses_str,
         known_facts=facts_str,
         cached_insights=cached_insights,
+        repo_search=repo_search,
     )
 
 
