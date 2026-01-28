@@ -5,10 +5,10 @@ In local-only demo mode, we avoid Supabase Storage entirely.
 We keep the same public API (upload_file/download_file/file_exists) so the rest
 of the agent can stay mostly unchanged.
 
-Storage layout:
-- local_storage/projects/<project_id>/files/<filename>
+Storage layout (under ADRONAUT_HOME):
+- $ADRONAUT_HOME/projects/<project_id>/inputs/uploaded/<filename>
 
-"storage_path" is a repo-relative path under local_storage/...
+"storage_path" is a path to the stored file (absolute by default).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from ..local_storage import ensure_dirs, paths
+from .paths import project_inputs_dir
 
 
 class FileManager:
@@ -34,19 +34,14 @@ class FileManager:
         if not src.is_file():
             raise ValueError(f"Not a file: {local_path}")
 
-        ensure_dirs(project_id)
-        dst_dir = paths().project_files_dir(project_id)
+        dst_dir = project_inputs_dir(project_id) / "uploaded"
         dst_dir.mkdir(parents=True, exist_ok=True)
 
         dst = dst_dir / src.name
         shutil.copy2(src, dst)
 
-        # Return repo-relative path
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        try:
-            return str(dst.relative_to(repo_root))
-        except Exception:
-            return str(dst)
+        # Return absolute path for robustness across working directories
+        return str(dst)
 
     @staticmethod
     def download_file(storage_path: str, local_dir: str = "/tmp") -> str:
@@ -58,9 +53,15 @@ class FileManager:
         if p.is_absolute() and p.exists():
             return str(p)
 
-        # Resolve relative to repo root
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        src = (repo_root / storage_path).resolve()
+        src = Path(storage_path).expanduser()
+        if not src.is_absolute():
+            # treat as relative to ADRONAUT_HOME
+            from .paths import adronaut_home
+
+            src = (adronaut_home() / storage_path).resolve()
+        else:
+            src = src.resolve()
+
         if not src.exists():
             raise FileNotFoundError(f"Stored file not found: {storage_path}")
 
@@ -75,8 +76,9 @@ class FileManager:
         p = Path(storage_path)
         if p.is_absolute():
             return p.exists()
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        return (repo_root / storage_path).exists()
+        from .paths import adronaut_home
+
+        return (adronaut_home() / storage_path).exists()
 
     @staticmethod
     def get_public_url(storage_path: str) -> Optional[str]:

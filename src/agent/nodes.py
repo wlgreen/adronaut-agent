@@ -323,6 +323,7 @@ def analyze_files_node(state: AgentState) -> AgentState:
     """
     from ..database.file_persistence import FilePersistence
     from ..storage.file_manager import download_file
+    from ..storage.analysis_store import save_file_analyses, save_uploaded_files_metadata
 
     project_id = state["project_id"]
     analyses = []
@@ -421,6 +422,16 @@ def analyze_files_node(state: AgentState) -> AgentState:
             analyses.append(analysis)
 
         state["file_analyses"] = analyses
+
+        # Persist inputs/analysis in stable per-project locations (local-only friendly)
+        try:
+            save_uploaded_files_metadata(project_id, state.get("uploaded_files", []))
+        except Exception:
+            pass
+        try:
+            save_file_analyses(project_id, analyses)
+        except Exception:
+            pass
 
     except Exception as e:
         state["errors"].append(f"File analysis error: {str(e)}")
