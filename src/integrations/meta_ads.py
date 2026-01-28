@@ -244,6 +244,8 @@ class MetaAdsAPI:
 
         if image_path:
             # Upload from local file
+            if not os.path.exists(image_path):
+                raise MetaAdsError(f"Image file not found: {image_path}")
             with open(image_path, 'rb') as f:
                 files = {'filename': f}
                 response = self._make_api_call(endpoint, method="POST", files=files)
@@ -258,7 +260,13 @@ class MetaAdsAPI:
         images = response.get("images", {})
         if images:
             first_image = next(iter(images.values()))
-            return first_image.get("hash")
+            h = first_image.get("hash")
+            if h:
+                return h
+
+        # In dry_run mode, return a stable mock hash so downstream steps work
+        if self.dry_run:
+            return f"mock_hash_{uuid.uuid4().hex[:8]}"
 
         raise MetaAdsError("Failed to extract image hash from response")
 
@@ -1008,51 +1016,79 @@ class MetaAdsAPI:
         )
 
         # Step 3 & 4: Process creative assets
-        creative_ids = []
-        ad_ids = []
+        creative_ids: List[str] = []
+        ad_ids: List[str] = []
 
         creative_assets = config.get("creative_assets", [])
-        if creative_assets:
-            for idx, asset in enumerate(creative_assets):
+        if not self.page_id:
+            print("   ⚠️  META_PAGE_ID not set - skipping creative/ad creation")
+        else:
+            # Allow either pre-generated image assets OR a shared default from meta.creative_specs
+            creative_specs = config.get("meta", {}).get("creative_specs", {})
+            default_link = creative_specs.get("link", "https://example.com")
+            default_cta = creative_specs.get("call_to_action", "SHOP_NOW")
+            default_image_url = creative_specs.get("image_url")
+            default_image_path = creative_specs.get("image_path")
+
+            # If caller didn't provide per-creative assets, synthesize 3 creatives for demo.
+            if not creative_assets:
+                headline_base = creative_specs.get("headline", "Limited Time Offer")
+                primary_base = creative_specs.get("primary_text", "Check out our product!")
+
+                creative_assets = [
+                    {"combo_id": "auto_1", "headline": f"{headline_base}", "primary_text": f"{primary_base}"},
+                    {"combo_id": "auto_2", "headline": f"{headline_base} (2)", "primary_text": f"{primary_base} (2)"},
+                    {"combo_id": "auto_3", "headline": f"{headline_base} (3)", "primary_text": f"{primary_base} (3)"},
+                ]
+                print("   ℹ️  No creative_assets provided; generating 3 default creatives for demo")
+
+            for idx, asset in enumerate(creative_assets[:3]):
+                # Supported fields (MVP):
+                # - headline / primary_text / link / call_to_action
+                # - image_url or image_path (required for real creatives)
                 creative_gen = asset.get("creative_generation", {})
 
-                # Get creative details
-                headline = creative_gen.get("headline", "Limited Time Offer")
-                primary_text = creative_gen.get("primary_text", "Check out our amazing product!")
+                headline = asset.get("headline") or creative_gen.get("headline") or "Limited Time Offer"
+                primary_text = asset.get("primary_text") or creative_gen.get("primary_text") or "Check out our product!"
+                link = asset.get("link") or default_link
+                cta = asset.get("call_to_action") or default_cta
 
-                # Use config link or default
-                link = config.get("meta", {}).get("creative_specs", {}).get("link", "https://example.com")
+                image_url = asset.get("image_url") or default_image_url
+                image_path = asset.get("image_path") or default_image_path
 
-                # For now, we'll create text-based creatives
-                # In production, you'd upload actual images from creative_gen
-                print(f"   Note: Image generation/upload not implemented. Using placeholder.")
+                if not image_url and not image_path:
+                    print(f"   ⚠️  Skipping creative {idx+1}: missing image_url/image_path")
+                    continue
 
-                # Create creative (would need actual image_hash in production)
-                # creative_id = self.create_ad_creative(
-                #     name=f"Creative {idx+1} - {asset.get('combo_id', 'unknown')}",
-                #     link=link,
-                #     message=primary_text,
-                #     headline=headline,
-                #     image_hash=image_hash,
-                #     call_to_action_type="SHOP_NOW"
-                # )
-                # creative_ids.append(creative_id)
+                # Upload image and create creative
+                image_hash = self.upload_image(image_path=image_path, image_url=image_url)
+                creative_id = self.create_ad_creative(
+                    name=f"Creative {idx+1} - {asset.get('combo_id', 'unknown')}",
+                    link=link,
+                    message=primary_text,
+                    headline=headline,
+                    image_hash=image_hash,
+                    call_to_action_type=cta,
+                    advantage_creative_enhancements={
+                        # Safe defaults; easy to toggle off later
+                        "text_enhancements": True,
+                        "image_brightness_and_contrast": True,
+                        "enhance_cta": True,
+                    },
+                )
+                creative_ids.append(creative_id)
 
-                print(f"   ⚠️  Skipping creative {idx+1} (image upload not implemented)")
-        else:
-            print("   ℹ️  No creative assets provided in config")
-
-        # Step 5: Create ads (if we had creatives)
-        # for idx, creative_id in enumerate(creative_ids):
-        #     external_id = f"{config.get('project_id', 'proj')}_{idx}_{int(time.time())}"
-        #     ad_id = self.create_ad(
-        #         ad_set_id=ad_set_id,
-        #         creative_id=creative_id,
-        #         name=f"Ad {idx+1}",
-        #         external_id=external_id,
-        #         status="PAUSED"
-        #     )
-        #     ad_ids.append(ad_id)
+            # Step 5: Create ads for each creative
+            for idx, creative_id in enumerate(creative_ids):
+                external_id = f"{config.get('project_id', 'proj')}_{idx}_{int(time.time())}"
+                ad_id = self.create_ad(
+                    ad_set_id=ad_set_id,
+                    creative_id=creative_id,
+                    name=f"Ad {idx+1}",
+                    external_id=external_id,
+                    status="PAUSED",
+                )
+                ad_ids.append(ad_id)
 
         print("\n✅ Campaign structure created successfully!")
         print(f"   Campaign ID: {campaign_id}")
