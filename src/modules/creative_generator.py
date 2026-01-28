@@ -4,7 +4,7 @@ Creative prompt generation module for AI-powered ad creative development
 
 from typing import Dict, Any, List, Tuple
 import re
-from ..llm.gemini import get_gemini
+from ..llm import gemini as gemini_mod
 
 
 # Platform-specific technical specifications
@@ -601,7 +601,7 @@ def generate_creative_prompts(
             "technical_specs": {...}
         }
     """
-    gemini = get_gemini()
+    gemini = gemini_mod.get_gemini()
 
     # Extract key information from test combination
     platform = test_combination.get("platform", "Meta")
@@ -731,7 +731,7 @@ def generate_creative_prompts_batch(
     if not test_combinations:
         return []
 
-    gemini = get_gemini()
+    gemini = gemini_mod.get_gemini()
 
     # Extract strategic context (shared across all combos)
     creative_strategy = strategy.get("creative_strategy", {})
@@ -1061,7 +1061,7 @@ def review_and_upgrade_visual_prompt(
             "notes": "Summary of changes or confirmation"
         }
     """
-    gemini = get_gemini()
+    gemini = gemini_mod.get_gemini()
 
     # Build review prompt
     prompt = VISUAL_PROMPT_REVIEW_TEMPLATE.format(
@@ -1111,7 +1111,7 @@ def review_visual_prompts_batch(
     if not visual_prompts:
         return {}
 
-    gemini = get_gemini()
+    gemini = gemini_mod.get_gemini()
 
     # Build prompts list for template
     prompts_list = []

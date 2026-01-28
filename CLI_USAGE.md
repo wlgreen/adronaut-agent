@@ -11,6 +11,8 @@ Complete reference for all Adronaut Agent CLI commands.
 | `run` | Generate campaign config | ❌ No |
 | `deploy-to-meta` | Deploy config to Meta Ads | ✅ Yes (optional) |
 | `monitor-meta` | Fetch Meta campaign status + insights | ✅ Yes |
+| `watch-meta` | Guardrail monitoring (today vs trailing 7d), saves snapshots | ✅ Yes |
+| `setup-cron` | Print crontab entry for hourly 9am-9pm watch-meta | ❌ No |
 | `export-manual-guide` | Generate manual setup checklist | ❌ No |
 
 ---
@@ -48,6 +50,8 @@ python cli.py run --project-id <project-name-or-uuid>
 python cli.py deploy-to-meta --config-path <config-file.json> [--dry-run]
 ```
 
+⚠️ Approval gate: you must type **YES** before any writes occur.
+
 ### Options
 - `--config-path` (required): Path to campaign config JSON
 - `--dry-run`: Test mode - log API calls without executing
@@ -73,6 +77,8 @@ By default, everything is created in **PAUSED** state for safety.
 
 If you don’t provide `creative_assets`, deploy will synthesize **3 creatives** using `meta.creative_specs.headline/primary_text` and the shared image.
 
+Deployment writes a `*_deployment_result.json` that includes guardrails used by `watch-meta`.
+
 ---
 
 ## 3. Monitor Meta (Status + Insights)
@@ -94,7 +100,39 @@ Writes a JSON file:
 
 ---
 
-## 4. Export Manual Guide
+## 4. Watch Meta (Guardrails, Cron-Friendly)
+
+Checks today vs trailing 7 days and evaluates demo guardrails:
+- Spend > daily cap
+- CTR drop > 20% vs 7d avg
+- CPA up > 20% vs target
+
+```bash
+python cli.py watch-meta --deployment-result campaign_<...>_deployment_result.json
+```
+
+Optional overrides (useful for older deployment files):
+```bash
+python cli.py watch-meta --deployment-result dep.json --daily-cap 75 --target-cpa 18
+```
+
+### Output
+- Saves a snapshot to `snapshots/<timestamp>.json`
+- Prints a Telegram-ready alert block
+
+---
+
+## 5. Setup Cron
+
+Print a crontab entry for hourly monitoring (9am-9pm):
+
+```bash
+python cli.py setup-cron --deployment-result campaign_<...>_deployment_result.json
+```
+
+---
+
+## 6. Export Manual Guide
 
 ```bash
 python cli.py export-manual-guide --config-path <config-file.json>

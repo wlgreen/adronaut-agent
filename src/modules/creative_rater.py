@@ -5,7 +5,7 @@ LLM-based scoring of generated creative prompts against specific criteria.
 """
 
 from typing import Dict, Any, List, Optional
-from src.llm.gemini import get_gemini
+from src.llm import gemini as gemini_mod
 
 
 def rate_creative_prompt(
@@ -151,7 +151,7 @@ CRITICAL JSON FORMATTING RULES:
 Be specific and reference actual content from the prompt in your analysis."""
 
     # Call LLM for rating
-    gemini = get_gemini()
+    gemini = gemini_mod.get_gemini()
     response = gemini.generate_json(
         prompt=rating_prompt,
         temperature=0.3,  # Analytical evaluation
@@ -372,9 +372,7 @@ def rate_generated_image(
         - weaknesses: List of identified weaknesses
         - suggestions: List of improvement suggestions
     """
-    from src.llm.gemini import get_gemini
-
-    gemini = get_gemini()
+    gemini = gemini_mod.get_gemini()
 
     # Build criteria dict for review
     criteria = {
