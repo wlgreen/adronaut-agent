@@ -16,6 +16,7 @@ from .actions import build_action_registry, list_available_actions
 from .state import AgentState
 from .planning import default_plan_template, normalize_todo_list
 from ..llm import gemini as gemini_mod
+from ..storage.analysis_store import summarize_cached_insights_for_planner
 
 
 PLANNER_SYSTEM_TEMPLATE = """You are a planning agent for an ads/marketing automation product.
@@ -59,6 +60,9 @@ UPLOADED FILES:
 KNOWN FACTS:
 {known_facts}
 
+CACHED INSIGHTS (from previous runs, if available):
+{cached_insights}
+
 Respond with JSON in this exact format:
 {{
   "decision": "initialize" | "reflect" | "enrich" | "continue",
@@ -100,6 +104,12 @@ def _build_planner_prompt(state: AgentState) -> str:
         ]
     ) or "None yet"
 
+    cached_insights = "None"
+    try:
+        cached_insights = summarize_cached_insights_for_planner(state.get("project_id", ""))
+    except Exception:
+        cached_insights = "None"
+
     return PLANNER_PROMPT_TEMPLATE.format(
         project_loaded=state.get("project_loaded", False),
         current_phase=state.get("current_phase", "initialized"),
@@ -109,6 +119,7 @@ def _build_planner_prompt(state: AgentState) -> str:
         num_experiments=len(state.get("experiment_results", [])),
         file_analyses=file_analyses_str,
         known_facts=facts_str,
+        cached_insights=cached_insights,
     )
 
 

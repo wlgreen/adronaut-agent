@@ -8,40 +8,51 @@ from ..state import AgentState
 
 
 def _summarize_reflection_for_planner(state: AgentState) -> Dict[str, Any]:
-    """Best-effort extraction of reflection outcomes into a compact planner-friendly summary.
+    """Extract reflection outcomes into a compact, stable schema for planning.
 
-    We keep this intentionally schema-light because underlying module outputs may evolve.
+    Goal: make post-results replanning high quality and low ambiguity.
     """
-    summary: Dict[str, Any] = {}
+    summary: Dict[str, Any] = {
+        "iteration": state.get("iteration", 0),
+        "current_phase": state.get("current_phase"),
+        "threshold_status": state.get("threshold_status"),
+    }
 
-    # Common places where reflection outputs might land
-    if state.get("threshold_status") is not None:
-        summary["threshold_status"] = state.get("threshold_status")
+    # Prefer the structured analysis produced by reflection_node
+    analysis = (state.get("node_outputs") or {}).get("reflection_analysis")
+    if isinstance(analysis, dict) and analysis:
+        summary["threshold_met"] = analysis.get("threshold_met")
+        summary["threshold_gap"] = analysis.get("threshold_gap")
+        summary["performance_summary"] = analysis.get("performance_summary")
+        summary["winners"] = analysis.get("winners")
+        summary["losers"] = analysis.get("losers")
 
+        var = analysis.get("variation_analysis")
+        if isinstance(var, list) and var:
+            summary["top_variations"] = var[:3]
+
+        insights = analysis.get("insights")
+        if isinstance(insights, list) and insights:
+            summary["insights"] = insights[:5]
+
+        recs = analysis.get("recommendations")
+        if isinstance(recs, list) and recs:
+            summary["recommendations"] = recs[:5]
+
+    # Add easy-to-use summary fields
     if state.get("best_performers"):
         summary["best_performers"] = state.get("best_performers")
 
-    # Recent experiment results (cap)
     exp_results = state.get("experiment_results") or []
     if isinstance(exp_results, list) and exp_results:
         summary["recent_experiment_results_count"] = len(exp_results)
-        summary["recent_experiment_results_tail"] = exp_results[-3:]
 
-    # Metrics timeline tail (cap)
-    mt = state.get("metrics_timeline") or []
-    if isinstance(mt, list) and mt:
-        summary["recent_metrics_tail"] = mt[-3:]
-
-    # Patch history tail (cap)
-    ph = state.get("patch_history") or []
-    if isinstance(ph, list) and ph:
-        summary["recent_patches_tail"] = ph[-3:]
-
-    # Heuristic recommended next actions
+    # Recommended next actions (planner still decides)
     recommended: List[str] = []
     if exp_results:
         recommended.append("adjustment")
-    if state.get("threshold_status") == "not_met":
+    # If threshold not met, often need creative refresh or targeting tweaks
+    if (analysis or {}).get("threshold_met") is False or state.get("threshold_status") == "not_met":
         recommended.append("creative_generation")
     summary["recommended_next_actions"] = list(dict.fromkeys(recommended))
 

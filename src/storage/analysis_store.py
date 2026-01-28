@@ -58,3 +58,40 @@ def load_insights_cache(project_id: str, storage_path: str) -> Optional[Dict[str
     except Exception:
         return None
     return None
+
+
+def list_insights_cache_files(project_id: str) -> List[Path]:
+    d = project_analysis_dir(project_id) / "derived" / "insights_cache"
+    if not d.exists():
+        return []
+    return sorted(d.glob("*.json"))
+
+
+def summarize_cached_insights_for_planner(project_id: str, max_files: int = 3) -> str:
+    """Return a short human-readable summary of cached insights to include in planner prompt."""
+    files = list_insights_cache_files(project_id)[:max_files]
+    if not files:
+        return "None"
+
+    parts: List[str] = []
+    for p in files:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        insights = (data or {}).get("insights") or {}
+        strategy = insights.get("strategy") or {}
+        ins = (strategy.get("insights") or {}) if isinstance(strategy, dict) else {}
+        patterns = ins.get("patterns") or []
+        strengths = ins.get("strengths") or []
+        weaknesses = ins.get("weaknesses") or []
+
+        parts.append(f"File: {p.name}")
+        if patterns:
+            parts.append(f"- patterns: {patterns[:3]}")
+        if strengths:
+            parts.append(f"- strengths: {strengths[:3]}")
+        if weaknesses:
+            parts.append(f"- weaknesses: {weaknesses[:3]}")
+
+    return "\n".join(parts) if parts else "None"
