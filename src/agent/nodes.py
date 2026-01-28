@@ -1100,6 +1100,7 @@ def insight_node(state: AgentState) -> AgentState:
         Updated state with strategy
     """
     from ..database.file_persistence import FilePersistence
+    from ..storage.analysis_store import save_insights_cache
 
     try:
         # Categorize files: cached vs new
@@ -1169,11 +1170,22 @@ def insight_node(state: AgentState) -> AgentState:
                 "generated_at": None,  # Will be set by database
             }
 
-            FilePersistence.cache_file_insights(
-                project_id=project_id,
-                storage_path=storage_path,
-                insights=insights_to_cache
-            )
+            # Local-first cache
+            try:
+                save_insights_cache(project_id=project_id, storage_path=storage_path, insights=insights_to_cache)
+            except Exception:
+                pass
+
+            # DB cache (if available)
+            try:
+                if _db_enabled():
+                    FilePersistence.cache_file_insights(
+                        project_id=project_id,
+                        storage_path=storage_path,
+                        insights=insights_to_cache
+                    )
+            except Exception:
+                pass
 
         state["messages"].append("Cached insights for future sessions")
 
