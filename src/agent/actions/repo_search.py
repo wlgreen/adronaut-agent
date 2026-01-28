@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .skills import BaseSkill
 from ..state import AgentState
@@ -89,6 +89,52 @@ def _infer_queries_from_state(state: AgentState) -> List[str]:
     return out[:12]
 
 
+def _get_current_step(state: AgentState) -> Dict[str, Any]:
+    plan = state.get("plan") or {}
+    steps = plan.get("steps") or []
+    idx = int(state.get("plan_step_index", 0))
+    if 0 <= idx < len(steps) and isinstance(steps[idx], dict):
+        return steps[idx]
+    return {}
+
+
+def _sanitize_queries(queries: List[str], max_q: int = 12, max_len: int = 48) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for q in queries:
+        if not isinstance(q, str):
+            continue
+        q = q.strip()
+        if not q:
+            continue
+        if len(q) > max_len:
+            q = q[:max_len]
+        if q in seen:
+            continue
+        seen.add(q)
+        out.append(q)
+        if len(out) >= max_q:
+            break
+    return out
+
+
+def _extract_queries_from_step(step: Dict[str, Any]) -> List[str]:
+    # Supported keys: search / queries / query
+    v = step.get("search")
+    if v is None:
+        v = step.get("queries")
+    if v is None:
+        v = step.get("query")
+
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v]
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, str)]
+    return []
+
+
 def _iter_candidate_files(repo_root: Path) -> List[Path]:
     """Keep search bounded to relevant text files."""
     candidates: List[Path] = []
@@ -147,8 +193,15 @@ class RepoSearchSkill(BaseSkill):
         )
 
     def run(self, state: AgentState) -> AgentState:
-        # Infer queries (Option 2)
-        queries = _infer_queries_from_state(state)
+        # Hybrid: prefer planner-provided queries on this step; fallback to state-inferred queries.
+        step = _get_current_step(state)
+        step_queries = _extract_queries_from_step(step)
+        if step_queries:
+            queries = _sanitize_queries(step_queries)
+            query_source = "planner"
+        else:
+            queries = _sanitize_queries(_infer_queries_from_state(state))
+            query_source = "inferred"
 
         # Repo root = .../src/agent/actions/repo_search.py -> repo
         repo_root = Path(__file__).resolve().parents[3]
@@ -185,7 +238,7 @@ class RepoSearchSkill(BaseSkill):
         state["artifacts"][step_id]["repo_search_results"] = results[:25]
 
         state.setdefault("messages", []).append(
-            f"Repo search: {hit_count} hits across {len(results)} files (queries={queries})"
+            f"Repo search: {hit_count} hits across {len(results)} files (source={query_source}, queries={queries})"
         )
 
         # Force replan so the planner can use repo_search findings
