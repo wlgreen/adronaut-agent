@@ -1049,6 +1049,139 @@ def deploy_to_meta_command(args):
         return 1
 
 
+def auto_watch_command(args):
+    """Auto-pull Meta metrics, evaluate guardrails, and (prepare-mode) trigger agent until approval gate."""
+    import os
+    from datetime import date, timedelta, datetime
+
+    from src.integrations.meta_ads import MetaAdsAPI
+    from src.integrations.meta_monitor import fetch_campaign_metrics
+    from src.integrations.meta_watch import summarize_insights, evaluate_guardrails
+    from src.storage.deployments import latest_deployment_result_path, load_deployment_result
+    from src.storage.meta_watch_store import save_meta_watch_payload
+    from src.agent.state import create_initial_state
+    from src.agent.graph import get_campaign_agent
+
+    project_id = args.project_id
+
+    # Locate deployment result
+    dep_path = Path(args.deployment_result) if getattr(args, "deployment_result", None) else None
+    if dep_path is None:
+        dep_path = latest_deployment_result_path(project_id)
+    if dep_path is None or not dep_path.exists():
+        print(f"Error: no deployment result found for project {project_id}")
+        print("Tip: run deploy-to-meta first to generate *_deployment_result.json")
+        return 1
+
+    dep = load_deployment_result(dep_path)
+    campaign_id = dep.get("campaign_id")
+    if not campaign_id:
+        print("Error: deployment result missing 'campaign_id'")
+        return 1
+
+    guardrails = dep.get("guardrails") or {}
+    daily_cap = guardrails.get("daily_cap")
+    target_cpa = guardrails.get("target_cpa")
+
+    dry_run = getattr(args, "dry_run", False) or os.getenv('META_DRY_RUN', '').lower() == 'true'
+    sandbox_mode = os.getenv('META_SANDBOX_MODE', '').lower() == 'true'
+
+    access_token = os.getenv('META_ACCESS_TOKEN')
+    ad_account_id = os.getenv('META_AD_ACCOUNT_ID')
+    page_id = os.getenv('META_PAGE_ID')
+    instagram_actor_id = os.getenv('META_INSTAGRAM_ACTOR_ID')
+
+    if sandbox_mode:
+        access_token = os.getenv('META_SANDBOX_TOKEN') or access_token
+        ad_account_id = os.getenv('META_SANDBOX_ACCOUNT_ID') or ad_account_id
+
+    if not dry_run and not access_token:
+        print("Error: META_ACCESS_TOKEN not set")
+        return 1
+    if not dry_run and not ad_account_id:
+        print("Error: META_AD_ACCOUNT_ID not set")
+        return 1
+
+    api = MetaAdsAPI(
+        access_token=access_token or "test_token",
+        ad_account_id=ad_account_id or "act_test",
+        page_id=page_id,
+        instagram_actor_id=instagram_actor_id,
+        dry_run=dry_run,
+        sandbox_mode=sandbox_mode,
+    )
+
+    today = date.today()
+    today_s = today.isoformat()
+    trailing_start = (today - timedelta(days=7)).isoformat()
+    trailing_end = (today - timedelta(days=1)).isoformat()
+
+    today_res = fetch_campaign_metrics(api, campaign_id, today_s, today_s)
+    trailing_res = fetch_campaign_metrics(api, campaign_id, trailing_start, trailing_end)
+
+    today_metrics = summarize_insights(today_res.insights)
+    trailing_metrics = summarize_insights(trailing_res.insights)
+
+    alerts = evaluate_guardrails(
+        campaign_id=campaign_id,
+        today=today_metrics,
+        trailing_7d=trailing_metrics,
+        daily_cap=daily_cap,
+        target_cpa=target_cpa,
+    )
+
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    payload = {
+        "timestamp": ts,
+        "project_id": project_id,
+        "campaign_id": campaign_id,
+        "deployment_result": str(dep_path),
+        "guardrails": {"daily_cap": daily_cap, "target_cpa": target_cpa},
+        "today": {"date": today_s, **today_metrics},
+        "trailing_7d": {"since": trailing_start, "until": trailing_end, **trailing_metrics},
+        "alerts": [a.__dict__ for a in alerts],
+        "raw": {
+            "today": getattr(today_res, "insights", None),
+            "trailing_7d": getattr(trailing_res, "insights", None),
+        },
+    }
+
+    p = save_meta_watch_payload(project_id, payload)
+    print(f"✓ Saved meta watch payload: {p}")
+
+    # If no breaches, exit
+    breaches = [a for a in alerts if a.code != "OK"]
+    if not breaches:
+        print("OK: No guardrail breaches")
+        return 0
+
+    # Prepare mode: inject results and run agent until approval gate
+    if getattr(args, "mode", "prepare") != "prepare":
+        print("Guardrails breached (non-prepare mode): no agent run triggered")
+        return 0
+
+    injected = {
+        "source": "meta_watch",
+        "timestamp": ts,
+        "campaign_id": campaign_id,
+        "today": today_metrics,
+        "trailing_7d": trailing_metrics,
+        "alerts": [a.__dict__ for a in alerts],
+        "guardrails": {"daily_cap": daily_cap, "target_cpa": target_cpa},
+    }
+
+    st = create_initial_state(project_id=project_id, uploaded_files=[], session_num=1)
+    st["injected_experiment_results"] = [injected]
+
+    # Run graph; should end at approval gate for adjustment/campaign_setup
+    agent = get_campaign_agent()
+    out = agent.invoke(st)
+
+    if out.get("approval_status") == "pending":
+        print("⏸ Paused for approval. Resume with: python cli.py run --project-id <id> --approve")
+    return 0
+
+
 def monitor_meta_command(args):
     """Fetch Meta campaign status + insights"""
     import os
@@ -1943,6 +2076,32 @@ def main():
         help="Custom output file path (default: output/test_creatives/test_creative_<timestamp>.json)"
     )
 
+    # Auto-watch Meta command
+    auto_watch_parser = subparsers.add_parser(
+        "auto-watch",
+        help="Auto-pull Meta metrics, evaluate guardrails, and (prepare mode) trigger agent until approval gate"
+    )
+    auto_watch_parser.add_argument(
+        "--project-id",
+        required=True,
+        help="Project identifier"
+    )
+    auto_watch_parser.add_argument(
+        "--mode",
+        default="prepare",
+        choices=["prepare"],
+        help="Mode (currently only 'prepare')"
+    )
+    auto_watch_parser.add_argument(
+        "--deployment-result",
+        help="Optional path to a *_deployment_result.json (defaults to latest in project artifacts)"
+    )
+    auto_watch_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Dry run Meta API calls (no network)"
+    )
+
     # Deploy to Meta command
     deploy_parser = subparsers.add_parser(
         "deploy-to-meta",
@@ -2064,6 +2223,8 @@ def main():
         return monitor_meta_command(args)
     elif args.command == "watch-meta":
         return watch_meta_command(args)
+    elif args.command == "auto-watch":
+        return auto_watch_command(args)
     elif args.command == "setup-cron":
         return setup_cron_command(args)
     elif args.command == "export-manual-guide":

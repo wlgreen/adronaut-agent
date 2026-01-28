@@ -243,10 +243,22 @@ def load_context_node(state: AgentState) -> AgentState:
         if checkpoint_state:
             # Merge: prefer checkpoint, but keep any new uploaded_files passed in.
             incoming_uploaded = state.get("uploaded_files") or []
+            incoming_injected = state.get("injected_experiment_results") or []
             prev_uploaded = checkpoint_state.get("uploaded_files") or []
 
             state.clear()
             state.update(checkpoint_state)
+
+            # If an external caller injected fresh experiment results (e.g., auto-watch), append them.
+            if incoming_injected:
+                state.setdefault("experiment_results", [])
+                if isinstance(state["experiment_results"], list):
+                    state["experiment_results"].extend(incoming_injected)
+                # Invalidate stale planning so we reflect/replan.
+                state["plan"] = None
+                state["plan_step_index"] = 0
+                state["todo_printed"] = False
+                state.setdefault("messages", []).append("Injected experiment results; cleared plan")
 
             # If new inputs are provided (or differ), invalidate stale planning/analysis.
             if incoming_uploaded:
