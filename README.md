@@ -84,6 +84,8 @@ python cli.py run --project-id eco-bottle-001
 
 ### Deploy to Meta (creates real objects, default PAUSED)
 
+⚠️ Approval gate: you must type **YES** before any Meta API writes occur.
+
 ```bash
 # Create campaign + ad set + (optionally) creatives + ads
 python cli.py deploy-to-meta --config-path campaign_eco-bottle-001_v0.json
@@ -107,6 +109,27 @@ By default, if you don’t provide `creative_assets`, the deploy step will synth
 python cli.py monitor-meta --campaign-id <campaign_id> --since 2026-01-01 --until 2026-01-07
 # or
 python cli.py monitor-meta --deployment-result campaign_eco-bottle-001_v0_deployment_result.json --since 2026-01-01 --until 2026-01-07
+```
+
+### Watch Meta (Guardrails + Snapshots)
+
+Cron-friendly monitoring that pulls **today** + **trailing 7d** insights and checks guardrails:
+- Spend > daily cap
+- CTR drop > 20% vs trailing 7d avg
+- CPA up > 20% vs target
+
+```bash
+python cli.py watch-meta --deployment-result campaign_eco-bottle-001_v0_deployment_result.json
+```
+
+Creates a snapshot in `snapshots/<timestamp>.json` and prints alerts in a Telegram-ready format.
+
+### Setup Cron
+
+Print a crontab entry for hourly monitoring from 9am-9pm:
+
+```bash
+python cli.py setup-cron --deployment-result campaign_eco-bottle-001_v0_deployment_result.json
 ```
 
 

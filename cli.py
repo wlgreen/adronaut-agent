@@ -690,6 +690,14 @@ def deploy_to_meta_command(args):
     if dry_run:
         print("🔧 DRY RUN MODE: No actual API calls will be made")
         print()
+    else:
+        print("⚠️  This will create objects in Meta Ads (campaign/ad set/creatives).")
+        print("    Safety: everything is created in PAUSED state.")
+        confirm = input("Type YES to deploy: ").strip()
+        if confirm != "YES":
+            print("Aborted. (Did not deploy)")
+            return 1
+        print()
 
     # Get credentials from environment
     access_token = os.getenv('META_ACCESS_TOKEN')
@@ -760,10 +768,20 @@ def deploy_to_meta_command(args):
 
         print()
 
-        # Save deployment result
+        # Save deployment result (include guardrail context for watch-meta)
+        meta_section = config.get("meta", {})
+        result_out = {
+            **result,
+            "config_path": str(config_path),
+            "guardrails": {
+                "daily_cap": meta_section.get("daily_budget"),
+                "target_cpa": (meta_section.get("bidding", {}) or {}).get("target_cpa"),
+            },
+        }
+
         result_filename = config_path.stem + "_deployment_result.json"
         with open(result_filename, 'w') as f:
-            json.dump(result, f, indent=2)
+            json.dump(result_out, f, indent=2)
         print(f"✓ Deployment result saved to: {result_filename}")
         print()
 
@@ -857,6 +875,195 @@ def monitor_meta_command(args):
         json.dump(out, f, indent=2)
 
     print(f"✓ Saved: {out_path}")
+    return 0
+
+
+def watch_meta_command(args):
+    """Cron-friendly Meta monitoring with guardrails + Telegram-ready alerts."""
+    import os
+    from datetime import date, timedelta, datetime
+
+    from src.integrations.meta_ads import MetaAdsAPI
+    from src.integrations.meta_monitor import fetch_campaign_metrics
+    from src.integrations.meta_watch import summarize_insights, evaluate_guardrails
+
+    dep_path = Path(args.deployment_result)
+    if not dep_path.exists():
+        print(f"Error: deployment result not found: {dep_path}")
+        return 1
+
+    try:
+        dep = json.loads(dep_path.read_text())
+    except json.JSONDecodeError:
+        print(f"Error: invalid JSON in deployment result: {dep_path}")
+        return 1
+
+    campaign_id = dep.get("campaign_id")
+    if not campaign_id:
+        print("Error: deployment result missing 'campaign_id'")
+        print("Tip: re-run deploy-to-meta to generate a valid *_deployment_result.json")
+        return 1
+
+    guardrails = dep.get("guardrails") or {}
+    daily_cap = guardrails.get("daily_cap")
+    target_cpa = guardrails.get("target_cpa")
+
+    # Allow overrides for older deployment files.
+    if args.daily_cap is not None:
+        daily_cap = args.daily_cap
+    if args.target_cpa is not None:
+        target_cpa = args.target_cpa
+
+    # Validate guardrails (optional but recommended)
+    if daily_cap is not None:
+        try:
+            daily_cap = float(daily_cap)
+        except (TypeError, ValueError):
+            print(f"Error: daily_cap must be a number. Got: {daily_cap!r}")
+            return 1
+
+    if target_cpa is not None:
+        try:
+            target_cpa = float(target_cpa)
+        except (TypeError, ValueError):
+            print(f"Error: target_cpa must be a number. Got: {target_cpa!r}")
+            return 1
+
+    dry_run = args.dry_run or os.getenv('META_DRY_RUN', '').lower() == 'true'
+    sandbox_mode = os.getenv('META_SANDBOX_MODE', '').lower() == 'true'
+
+    access_token = os.getenv('META_ACCESS_TOKEN')
+    ad_account_id = os.getenv('META_AD_ACCOUNT_ID')
+    page_id = os.getenv('META_PAGE_ID')
+    instagram_actor_id = os.getenv('META_INSTAGRAM_ACTOR_ID')
+
+    if sandbox_mode:
+        access_token = os.getenv('META_SANDBOX_TOKEN') or access_token
+        ad_account_id = os.getenv('META_SANDBOX_ACCOUNT_ID') or ad_account_id
+
+    if not dry_run and not access_token:
+        print("Error: META_ACCESS_TOKEN not set")
+        return 1
+    if not dry_run and not ad_account_id:
+        print("Error: META_AD_ACCOUNT_ID not set")
+        return 1
+
+    api = MetaAdsAPI(
+        access_token=access_token or "test_token",
+        ad_account_id=ad_account_id or "act_test",
+        page_id=page_id,
+        instagram_actor_id=instagram_actor_id,
+        dry_run=dry_run,
+        sandbox_mode=sandbox_mode,
+    )
+
+    today = date.today()
+    today_s = today.isoformat()
+    trailing_start = (today - timedelta(days=7)).isoformat()
+    trailing_end = (today - timedelta(days=1)).isoformat()
+
+    print("=" * 60)
+    print("  Meta Guardrail Watch")
+    print("=" * 60)
+    print(f"Campaign ID: {campaign_id}")
+    print(f"Today: {today_s}")
+    print(f"Trailing 7d: {trailing_start} → {trailing_end}")
+    if daily_cap is not None:
+        print(f"Guardrail daily cap: ${daily_cap:.2f}")
+    if target_cpa is not None:
+        print(f"Guardrail target CPA: ${target_cpa:.2f}")
+    if dry_run:
+        print("🔧 DRY RUN MODE")
+    print()
+
+    today_res = fetch_campaign_metrics(api, campaign_id, today_s, today_s)
+    trailing_res = fetch_campaign_metrics(api, campaign_id, trailing_start, trailing_end)
+
+    today_metrics = summarize_insights(today_res.insights)
+    trailing_metrics = summarize_insights(trailing_res.insights)
+
+    alerts = evaluate_guardrails(
+        campaign_id=campaign_id,
+        today=today_metrics,
+        trailing_7d=trailing_metrics,
+        daily_cap=daily_cap,
+        target_cpa=target_cpa,
+    )
+
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    snapshots_dir = Path("snapshots")
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    snap_path = snapshots_dir / f"{ts}.json"
+
+    snapshot = {
+        "timestamp": ts,
+        "campaign_id": campaign_id,
+        "today": {"date": today_s, **today_metrics},
+        "trailing_7d": {"since": trailing_start, "until": trailing_end, **trailing_metrics},
+        "guardrails": {"daily_cap": daily_cap, "target_cpa": target_cpa},
+        "alerts": [a.__dict__ for a in alerts],
+    }
+
+    snap_path.write_text(json.dumps(snapshot, indent=2))
+
+    # Telegram-friendly output (single message style)
+    critical = [a for a in alerts if a.severity == "critical"]
+    warning = [a for a in alerts if a.severity == "warning"]
+
+    header = f"META WATCH | {campaign_id} | {today_s}"
+    print(header)
+    print("-" * len(header))
+    cpa_val = today_metrics.get("cpa")
+    cpa_str = "N/A" if cpa_val is None else f"${float(cpa_val):.2f}"
+    print(
+        f"Spend: ${today_metrics['spend']:.2f} | "
+        f"CTR: {((today_metrics['ctr'] or 0)*100):.2f}% | "
+        f"CPA: {cpa_str}"
+    )
+
+    if critical or warning:
+        print("\nALERTS:")
+        for a in alerts:
+            if a.code == "OK":
+                continue
+            tag = "CRITICAL" if a.severity == "critical" else "WARNING"
+            print(f"[{tag}] {a.message}")
+            print(f"→ Suggested: {a.suggested_action}")
+    else:
+        print("\nOK: No guardrail breaches.")
+
+    print(f"\n✓ Snapshot saved: {snap_path}")
+    return 0
+
+
+def setup_cron_command(args):
+    """Print a crontab entry for hourly monitoring 9am-9pm."""
+    repo_path = Path(args.repo_path or Path(__file__).resolve().parent)
+    python_bin = args.python or "python3"
+
+    if not args.deployment_result:
+        print("Error: --deployment-result is required")
+        return 1
+
+    dep = Path(args.deployment_result)
+    if not dep.is_absolute():
+        dep = (Path.cwd() / dep).resolve()
+
+    # 0 minutes, hours 9-21 inclusive.
+    cron = (
+        f"0 9-21 * * * cd {repo_path} && {python_bin} cli.py watch-meta "
+        f"--deployment-result {dep} >> {repo_path}/snapshots/watch-meta.log 2>&1"
+    )
+
+    print("=" * 60)
+    print("  Cron Setup Helper")
+    print("=" * 60)
+    print("Add this to your crontab (run: crontab -e):\n")
+    print(cron)
+    print("\nNotes:")
+    print("  • Runs hourly from 9:00 through 21:00")
+    print("  • Writes snapshots/ for alert history")
+    print("  • Ensure env vars are available to cron (META_ACCESS_TOKEN, etc.)")
     return 0
 
 
@@ -1512,6 +1719,51 @@ def main():
         help="Log what would be queried (no API calls)"
     )
 
+    # Watch Meta command (cron-friendly guardrail monitoring)
+    watch_parser = subparsers.add_parser(
+        "watch-meta",
+        help="Cron-friendly Meta monitoring with guardrails + Telegram-ready alerts"
+    )
+    watch_parser.add_argument(
+        "--deployment-result",
+        required=True,
+        help="Path to *_deployment_result.json produced by deploy-to-meta"
+    )
+    watch_parser.add_argument(
+        "--daily-cap",
+        type=float,
+        help="Override daily spend cap (defaults to deployment_result.guardrails.daily_cap)"
+    )
+    watch_parser.add_argument(
+        "--target-cpa",
+        type=float,
+        help="Override target CPA (defaults to deployment_result.guardrails.target_cpa)"
+    )
+    watch_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Log what would be queried (no API calls)"
+    )
+
+    # Cron setup helper
+    cron_parser = subparsers.add_parser(
+        "setup-cron",
+        help="Print a crontab entry for hourly monitoring 9am-9pm"
+    )
+    cron_parser.add_argument(
+        "--deployment-result",
+        required=True,
+        help="Path to *_deployment_result.json to monitor"
+    )
+    cron_parser.add_argument(
+        "--repo-path",
+        help="Repo path to cd into (default: this repo)"
+    )
+    cron_parser.add_argument(
+        "--python",
+        help="Python executable to use in cron (default: python3)"
+    )
+
     # Export manual guide command
     export_parser = subparsers.add_parser(
         "export-manual-guide",
@@ -1541,6 +1793,10 @@ def main():
         return deploy_to_meta_command(args)
     elif args.command == "monitor-meta":
         return monitor_meta_command(args)
+    elif args.command == "watch-meta":
+        return watch_meta_command(args)
+    elif args.command == "setup-cron":
+        return setup_cron_command(args)
     elif args.command == "export-manual-guide":
         return export_manual_guide_command(args)
 

@@ -6,7 +6,7 @@ import json
 from typing import Any, Dict
 
 from .state import AgentState
-from .planning import default_plan_template
+from .planning import default_plan_template, normalize_todo_list
 from ..modules.creative_generator import generate_creative_prompts
 from ..modules.creative_rater import rate_creative_prompt
 from ..llm.gemini import get_gemini
@@ -14,15 +14,16 @@ from ..llm.gemini import get_gemini
 
 PLANNER_SYSTEM = """You are a planning agent for an ads/marketing automation product.
 
-Create a step-by-step plan to go from inputs → artifacts → an actionable campaign config.
+Create a TODO checklist (a JSON array of steps) to go from inputs → artifacts → an actionable campaign config.
 
 Rules:
 - Output STRICT JSON.
+- Output MUST be a JSON ARRAY (not an object).
 - Steps must be small and executable.
 - Use only these actions:
   discovery, data_collection, insight, creative_generation, campaign_setup, reflection, adjustment, save
-- Each step must include: id, action, rationale, success.
-- Include an explicit approval gate by setting requires_approval=true when spending money or pushing changes to Meta.
+- Each step must include: id, action, rationale, success, requires_approval.
+- Set requires_approval=true for any step that could spend money or push changes to Meta.
 """
 
 
@@ -42,21 +43,41 @@ def _plan_prompt(state: AgentState) -> str:
 
 
 def planning_node(state: AgentState) -> AgentState:
-    """Create or refresh a plan."""
+    """Create or refresh a plan.
+
+    Planner output is a TODO list (JSON array). Internally we wrap it into
+    state["plan"] = {"steps": [...], ...}.
+
+    If state already has a valid plan with steps (e.g., pre-seeded), we reuse it.
+    """
     decision = state.get("decision") or "initialize"
+
+    existing = state.get("plan")
+    if isinstance(existing, dict) and isinstance(existing.get("steps"), list) and existing["steps"]:
+        state["plan_step_index"] = 0
+        state["approval_status"] = None
+        state["requires_approval"] = False
+        state.setdefault("artifacts", {})
+        state.setdefault("verification", {})
+        state["messages"].append("Plan reused")
+        return state
+
     gemini = get_gemini()
 
     try:
-        plan = gemini.generate_json(
+        todo = gemini.generate_json(
             prompt=_plan_prompt(state),
             system_instruction=PLANNER_SYSTEM,
             temperature=0.2,
             task_name="Planning",
         )
-        # Minimal validation
-        if not isinstance(plan, dict) or "steps" not in plan:
-            raise ValueError("planner returned invalid plan")
-        state["plan"] = plan
+        steps = normalize_todo_list(todo)
+        state["plan"] = {
+            "objective": "Run marketing agent workflow",
+            "version": 1,
+            "decision": decision,
+            "steps": steps,
+        }
     except Exception:
         state["plan"] = default_plan_template(decision)
 
@@ -65,6 +86,7 @@ def planning_node(state: AgentState) -> AgentState:
     state["requires_approval"] = False
     state.setdefault("artifacts", {})
     state.setdefault("verification", {})
+    state["todo_printed"] = False
     state["messages"].append("Plan created")
     return state
 
@@ -74,6 +96,24 @@ def execute_step_node(state: AgentState) -> AgentState:
     plan = state.get("plan") or {}
     steps = plan.get("steps") or []
     idx = int(state.get("plan_step_index", 0))
+
+    # Print the TODO list exactly once, before the first step executes.
+    if steps and idx == 0 and not state.get("todo_printed", False):
+        print("\n" + "=" * 60)
+        print("  TODO CHECKLIST (PLAN)")
+        print("=" * 60)
+        todo_out = [
+            {
+                "id": s.get("id"),
+                "action": s.get("action"),
+                "requires_approval": bool(s.get("requires_approval")),
+                "success": s.get("success"),
+            }
+            for s in steps
+        ]
+        print(json.dumps(todo_out, indent=2))
+        print()
+        state["todo_printed"] = True
 
     if idx >= len(steps):
         state["messages"].append("Plan complete")
