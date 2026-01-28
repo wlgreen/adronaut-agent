@@ -531,30 +531,39 @@ def run_command(args):
                 else:
                     print("✓ Forcing fresh start (--restart flag used)\n")
 
-    # Prompt for files/folders or URLs
-    print("Upload local files/folders or product URLs (comma-separated):")
-    print("  Examples:")
-    print("    ./data/historical.csv")
-    print("    ./data/ (folder; recursive)")
-    print("    https://mysite.com/product")
-    print("  Or mix: https://mysite.com/product,./data/")
-    print()
-    input_str = input("Files/Folders/URLs: ").strip()
+    # Check for --inputs / --urls flags first; fall back to interactive prompt
+    cli_inputs = getattr(args, 'inputs', None)
+    cli_urls = getattr(args, 'urls', None)
 
-    if not input_str:
-        print("Error: No files or URLs provided")
-        return 1
+    if cli_inputs or cli_urls:
+        # Non-interactive mode
+        local_paths = [p.strip() for p in (cli_inputs or "").split(",") if p.strip()]
+        product_urls = [u.strip() for u in (cli_urls or "").split(",") if u.strip()]
+    else:
+        # Interactive mode
+        print("Upload local files/folders or product URLs (comma-separated):")
+        print("  Examples:")
+        print("    ./data/historical.csv")
+        print("    ./data/ (folder; recursive)")
+        print("    https://mysite.com/product")
+        print("  Or mix: https://mysite.com/product,./data/")
+        print()
+        input_str = input("Files/Folders/URLs: ").strip()
 
-    # Parse inputs - separate URLs from local paths (files or directories)
-    inputs = [p.strip() for p in input_str.split(",") if p.strip()]
-    local_paths = []
-    product_urls = []
+        if not input_str:
+            print("Error: No files or URLs provided")
+            return 1
 
-    for item in inputs:
-        if item.startswith('http://') or item.startswith('https://'):
-            product_urls.append(item)
-        else:
-            local_paths.append(item)
+        # Parse inputs - separate URLs from local paths (files or directories)
+        inputs = [p.strip() for p in input_str.split(",") if p.strip()]
+        local_paths = []
+        product_urls = []
+
+        for item in inputs:
+            if item.startswith('http://') or item.startswith('https://'):
+                product_urls.append(item)
+            else:
+                local_paths.append(item)
 
     # Expand directories into file lists (recursive), ignore hidden files/dirs
     def _is_hidden(p: Path) -> bool:
@@ -1661,6 +1670,14 @@ def main():
         "--restart",
         action="store_true",
         help="Force restart flow even if resumption is possible (clears flow state)"
+    )
+    run_parser.add_argument(
+        "--inputs",
+        help="Comma-separated local files/folders to process (recursive, ignores hidden)"
+    )
+    run_parser.add_argument(
+        "--urls",
+        help="Comma-separated product URLs to scrape"
     )
 
     # Test creative command
