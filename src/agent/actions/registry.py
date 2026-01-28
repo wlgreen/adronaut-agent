@@ -25,10 +25,24 @@ def _verify_insight(state) -> Tuple[bool, List[str]]:
 
 
 def _verify_campaign_setup(state) -> Tuple[bool, List[str]]:
-    ok = bool(state.get("current_config"))
-    notes: List[str] = []
-    if not ok:
-        notes.append("Config missing")
+    from .config_quality import validate_campaign_config
+
+    cfg = state.get("current_config")
+    if not cfg:
+        return False, ["Config missing"]
+
+    ok, notes = validate_campaign_config(cfg)
+    return ok, notes
+
+
+def _verify_adjustment(state) -> Tuple[bool, List[str]]:
+    from .config_quality import validate_campaign_config
+
+    cfg = state.get("current_config")
+    if not cfg:
+        return False, ["Config missing after adjustment"]
+
+    ok, notes = validate_campaign_config(cfg)
     return ok, notes
 
 
@@ -90,6 +104,7 @@ def build_action_registry() -> Dict[str, object]:
                 "for optimization iterations."
             ),
             fn=agent_nodes.adjustment_node,
+            verify_fn=_verify_adjustment,
             requires_approval_fn=_approval_campaign_or_adjustment,
         ),
         "save": NodeWrapperSkill(

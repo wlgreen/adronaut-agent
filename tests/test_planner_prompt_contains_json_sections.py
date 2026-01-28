@@ -29,7 +29,7 @@ def test_planner_prompt_contains_json_sections(tmp_path, monkeypatch):
     start = prompt.find(marker)
     assert start != -1
     start = prompt.find("\n", start) + 1
-    end = prompt.find("REPO SEARCH SUMMARY (JSON", start)
+    end = prompt.find("LATEST REFLECTION (JSON", start)
     assert end != -1
     cached_block = prompt[start:end].strip()
     json.loads(cached_block)

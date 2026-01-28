@@ -271,6 +271,12 @@ def load_context_node(state: AgentState) -> AgentState:
         state["messages"].append(f"Loaded existing project: {project_id}")
         state["session_num"] = len(project_data.get("config_history", [])) + 1
 
+        # Optional auto-approval for pending steps (local-only UX):
+        # re-run with ADRONAUT_APPROVE=1 to approve the pending action.
+        if state.get("approval_status") == "pending" and os.environ.get("ADRONAUT_APPROVE") in ("1", "true", "True", "YES", "yes"):
+            state["approval_status"] = "approved"
+            state.setdefault("messages", []).append("Approval granted via ADRONAUT_APPROVE")
+
         # Check if we should resume from a previous incomplete flow
         flow_status = state.get("flow_status", "not_started")
         last_completed = state.get("last_completed_node")

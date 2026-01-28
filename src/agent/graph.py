@@ -33,6 +33,10 @@ def should_skip_to_resume_point(state: AgentState) -> str:
 
 def _continue_or_execute(state: AgentState) -> str:
     """After planning/verify, decide next node."""
+    # If we're awaiting approval, persist and stop this run.
+    if state.get("approval_status") == "pending":
+        return "save"
+
     plan = state.get("plan") or {}
     steps = plan.get("steps") or []
     idx = int(state.get("plan_step_index", 0))

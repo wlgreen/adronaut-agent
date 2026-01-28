@@ -63,6 +63,9 @@ KNOWN FACTS:
 CACHED INSIGHTS (JSON, from previous runs if available):
 {cached_insights}
 
+LATEST REFLECTION (JSON, if available):
+{latest_reflection}
+
 REPO SEARCH SUMMARY (JSON, if available):
 {repo_search}
 
@@ -113,6 +116,13 @@ def _build_planner_prompt(state: AgentState) -> str:
     except Exception:
         cached_insights = "[]"
 
+    latest_reflection = "null"
+    try:
+        lr = (state.get("knowledge_facts", {}) or {}).get("latest_reflection", {}).get("value")
+        latest_reflection = json.dumps(lr, indent=2) if lr is not None else "null"
+    except Exception:
+        latest_reflection = "null"
+
     repo_search = "null"
     try:
         rs = (state.get("knowledge_facts", {}) or {}).get("repo_search", {}).get("value")
@@ -130,6 +140,7 @@ def _build_planner_prompt(state: AgentState) -> str:
         file_analyses=file_analyses_str,
         known_facts=facts_str,
         cached_insights=cached_insights,
+        latest_reflection=latest_reflection,
         repo_search=repo_search,
     )
 
@@ -168,6 +179,33 @@ def planning_node(state: AgentState) -> AgentState:
         decision = result.get("decision", "initialize")
         reasoning = result.get("reasoning", "")
         steps = normalize_todo_list(result.get("steps", []))
+
+        # If previous run requested forced repo_search (e.g., config quality gate failure), prepend it.
+        frs = state.pop("force_repo_search", None)
+        if isinstance(frs, dict):
+            queries = frs.get("queries") or []
+            if steps and steps[0].get("action") != "repo_search":
+                steps = [
+                    {
+                        "id": "auto_repo_search",
+                        "action": "repo_search",
+                        "rationale": frs.get("reason") or "Investigate codebase/schema to fix verification failure",
+                        "success": "Find relevant code references and schema expectations",
+                        "requires_approval": False,
+                        "search": queries,
+                    }
+                ] + steps
+            elif not steps:
+                steps = [
+                    {
+                        "id": "auto_repo_search",
+                        "action": "repo_search",
+                        "rationale": frs.get("reason") or "Investigate codebase/schema to fix verification failure",
+                        "success": "Find relevant code references and schema expectations",
+                        "requires_approval": False,
+                        "search": queries,
+                    }
+                ]
 
         state["decision"] = decision
         state["decision_reasoning"] = reasoning
@@ -256,6 +294,14 @@ def execute_step_node(state: AgentState) -> AgentState:
     if requires_approval:
         state["requires_approval"] = True
 
+    # Hard approval gate: do not execute until approved.
+    if state.get("requires_approval") and state.get("approval_status") != "approved":
+        state["approval_status"] = "pending"
+        state.setdefault("messages", []).append(
+            f"Approval required for action '{action}'. Re-run with ADRONAUT_APPROVE=1 to approve and continue."
+        )
+        return state
+
     state = skill.run(state)
     return state
 
@@ -275,6 +321,16 @@ def verify_step_node(state: AgentState) -> AgentState:
 
     registry = _get_action_registry()
     skill = registry.get(action)
+
+    # If approval is pending, don't verify/advance; just persist and stop.
+    if state.get("approval_status") == "pending":
+        state["verification"] = {
+            "step": step.get("id"),
+            "action": action,
+            "ok": False,
+            "notes": ["Pending approval"],
+        }
+        return state
 
     # Unknown action => fail and replan
     if skill is None:
@@ -298,6 +354,12 @@ def verify_step_node(state: AgentState) -> AgentState:
         state["plan_step_index"] = idx + 1
         state["messages"].append(f"✓ Verified {action}")
     else:
+        # If config validation failed, hint planner to run repo_search next.
+        if action in ("campaign_setup", "adjustment"):
+            state["force_repo_search"] = {
+                "queries": ["generate_campaign_config", "current_config", "summary", "daily_budget", "schema"],
+                "reason": f"{action} produced invalid config: {notes}",
+            }
         state["messages"].append(f"✗ Verification failed for {action}: {notes}")
         state["plan_step_index"] = 0
         state["plan"] = None

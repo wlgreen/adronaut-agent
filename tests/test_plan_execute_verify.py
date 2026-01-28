@@ -79,6 +79,8 @@ def test_plan_execute_verify_loop_smoke(monkeypatch):
 
     # --- Run graph ---
     state = create_initial_state(project_id="test-project", uploaded_files=[], session_num=1)
+    # For tests, pre-approve to avoid the hard approval gate stopping execution.
+    state["approval_status"] = "approved"
     agent = get_campaign_agent()
     out = agent.invoke(state)
 
@@ -87,4 +89,7 @@ def test_plan_execute_verify_loop_smoke(monkeypatch):
     assert out.get("decision") == "initialize"
     assert out.get("plan_step_index", 0) >= 3  # should have advanced through multiple steps
     assert out.get("current_strategy")
-    assert out.get("current_config")
+
+    # Hard approval gate: campaign_setup requires approval and should stop before executing.
+    assert out.get("approval_status") == "pending"
+    assert out.get("current_config") in (None, {},)
