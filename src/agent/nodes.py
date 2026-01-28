@@ -8,6 +8,7 @@ from functools import wraps
 from tavily import TavilyClient
 from ..database.persistence import ProjectPersistence, SessionPersistence, CyclePersistence
 from ..storage.local_checkpoint import load_full_state, save_full_state
+from ..storage.debug_log import append_node_io_record
 
 
 def _db_enabled() -> bool:
@@ -139,6 +140,12 @@ def track_node(func):
             if len(result["node_outputs"][node_name]) > 5:
                 result["node_outputs"][node_name] = result["node_outputs"][node_name][-5:]
 
+            # Also append to per-project debug log file
+            try:
+                append_node_io_record(result.get("project_id", ""), node_name, record)
+            except Exception:
+                pass
+
             # End tracking
             tracker.node_end(node_name, result)
 
@@ -181,9 +188,15 @@ def track_node(func):
             # Capture failure output snapshot for debugging
             state.setdefault("node_outputs", {})
             state["node_outputs"].setdefault(node_name, [])
-            state["node_outputs"][node_name].append({"input": input_view, "error": str(e), "output": _debug_state_view(state)})
+            fail_record = {"input": input_view, "error": str(e), "output": _debug_state_view(state)}
+            state["node_outputs"][node_name].append(fail_record)
             if len(state["node_outputs"][node_name]) > 5:
                 state["node_outputs"][node_name] = state["node_outputs"][node_name][-5:]
+
+            try:
+                append_node_io_record(state.get("project_id", ""), node_name, fail_record)
+            except Exception:
+                pass
 
             # Try to save failed state
             try:
