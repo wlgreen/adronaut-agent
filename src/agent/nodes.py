@@ -23,6 +23,74 @@ from ..llm.gemini import get_gemini
 from ..utils.progress import get_progress_tracker
 
 
+def _truncate(value: Any, max_len: int = 400) -> Any:
+    if isinstance(value, str) and len(value) > max_len:
+        return value[:max_len] + "…"
+    return value
+
+
+def _compact(obj: Any, *, depth: int = 2, max_items: int = 20) -> Any:
+    """Make a JSON-serializable, size-bounded view of an object for debug logging."""
+    if depth <= 0:
+        if isinstance(obj, (str, int, float, bool)) or obj is None:
+            return _truncate(obj)
+        return f"<{type(obj).__name__}>"
+
+    if isinstance(obj, dict):
+        out: Dict[str, Any] = {}
+        for i, (k, v) in enumerate(obj.items()):
+            if i >= max_items:
+                out["…"] = f"(+{len(obj) - max_items} more keys)"
+                break
+            out[str(k)] = _compact(v, depth=depth - 1, max_items=max_items)
+        return out
+
+    if isinstance(obj, list):
+        out_list = [_compact(v, depth=depth - 1, max_items=max_items) for v in obj[:max_items]]
+        if len(obj) > max_items:
+            out_list.append(f"…(+{len(obj) - max_items} more items)")
+        return out_list
+
+    if isinstance(obj, tuple):
+        return _compact(list(obj), depth=depth, max_items=max_items)
+
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return _truncate(obj)
+
+    return f"<{type(obj).__name__}>"
+
+
+def _debug_state_view(state: AgentState) -> Dict[str, Any]:
+    """Small, stable debug view of state for node input/output logging."""
+    # Explicit allowlist of keys that are most useful and reasonably bounded.
+    keys = [
+        "project_id",
+        "decision",
+        "current_phase",
+        "iteration",
+        "uploaded_files",
+        "file_analyses",
+        "plan",
+        "plan_step_index",
+        "current_step_id",
+        "requires_approval",
+        "approval_status",
+        "verification",
+        "knowledge_facts",
+        "current_strategy",
+        "current_config",
+        "experiment_results",
+        "patch_history",
+        "metrics_timeline",
+        "errors",
+    ]
+    view: Dict[str, Any] = {}
+    for k in keys:
+        if k in state:
+            view[k] = _compact(state.get(k), depth=2, max_items=15)
+    return view
+
+
 def track_node(func):
     """
     Decorator to track node execution progress and auto-save state after each node.
@@ -32,6 +100,10 @@ def track_node(func):
     def wrapper(state: AgentState) -> AgentState:
         tracker = get_progress_tracker()
         node_name = func.__name__.replace('_node', '')
+
+        # Capture small input snapshot for debugging
+        state.setdefault("node_outputs", {})
+        input_view = _debug_state_view(state)
 
         # Mark node as currently executing
         state["current_executing_node"] = node_name
@@ -56,6 +128,16 @@ def track_node(func):
             # Special case: if this is the save_state_node, mark flow as completed
             if node_name == "save_state":
                 result["flow_status"] = "completed"
+
+            # Capture small output snapshot for debugging
+            result.setdefault("node_outputs", {})
+            output_view = _debug_state_view(result)
+            result["node_outputs"].setdefault(node_name, [])
+            # Keep a bounded history per node
+            record = {"input": input_view, "output": output_view}
+            result["node_outputs"][node_name].append(record)
+            if len(result["node_outputs"][node_name]) > 5:
+                result["node_outputs"][node_name] = result["node_outputs"][node_name][-5:]
 
             # End tracking
             tracker.node_end(node_name, result)
@@ -94,7 +176,14 @@ def track_node(func):
             # Node failed - mark as failed but keep last_completed_node
             state["flow_status"] = "failed"
             state["current_executing_node"] = None
-            state["errors"].append(f"{node_name} failed: {str(e)}")
+            state.setdefault("errors", []).append(f"{node_name} failed: {str(e)}")
+
+            # Capture failure output snapshot for debugging
+            state.setdefault("node_outputs", {})
+            state["node_outputs"].setdefault(node_name, [])
+            state["node_outputs"][node_name].append({"input": input_view, "error": str(e), "output": _debug_state_view(state)})
+            if len(state["node_outputs"][node_name]) > 5:
+                state["node_outputs"][node_name] = state["node_outputs"][node_name][-5:]
 
             # Try to save failed state
             try:
