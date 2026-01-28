@@ -786,6 +786,80 @@ def deploy_to_meta_command(args):
         return 1
 
 
+def monitor_meta_command(args):
+    """Fetch Meta campaign status + insights"""
+    import os
+    from src.integrations.meta_ads import MetaAdsAPI
+    from src.integrations.meta_monitor import fetch_campaign_metrics
+
+    dry_run = args.dry_run or os.getenv('META_DRY_RUN', '').lower() == 'true'
+    sandbox_mode = os.getenv('META_SANDBOX_MODE', '').lower() == 'true'
+
+    campaign_id = args.campaign_id
+    if args.deployment_result:
+        p = Path(args.deployment_result)
+        if not p.exists():
+            print(f"Error: deployment result not found: {p}")
+            return 1
+        with open(p, 'r') as f:
+            dep = json.load(f)
+        campaign_id = campaign_id or dep.get('campaign_id')
+
+    if not campaign_id:
+        print("Error: need --campaign-id or --deployment-result")
+        return 1
+
+    access_token = os.getenv('META_ACCESS_TOKEN')
+    ad_account_id = os.getenv('META_AD_ACCOUNT_ID')
+    page_id = os.getenv('META_PAGE_ID')
+    instagram_actor_id = os.getenv('META_INSTAGRAM_ACTOR_ID')
+
+    if sandbox_mode:
+        access_token = os.getenv('META_SANDBOX_TOKEN') or access_token
+        ad_account_id = os.getenv('META_SANDBOX_ACCOUNT_ID') or ad_account_id
+
+    if not dry_run and not access_token:
+        print("Error: META_ACCESS_TOKEN not set")
+        return 1
+    if not dry_run and not ad_account_id:
+        print("Error: META_AD_ACCOUNT_ID not set")
+        return 1
+
+    api = MetaAdsAPI(
+        access_token=access_token or "test_token",
+        ad_account_id=ad_account_id or "act_test",
+        page_id=page_id,
+        instagram_actor_id=instagram_actor_id,
+        dry_run=dry_run,
+        sandbox_mode=sandbox_mode,
+    )
+
+    print("=" * 60)
+    print("  Meta Ads Monitor")
+    print("=" * 60)
+    print(f"Campaign ID: {campaign_id}")
+    print(f"Range: {args.since} → {args.until}")
+    if dry_run:
+        print("🔧 DRY RUN MODE")
+
+    result = fetch_campaign_metrics(api, campaign_id, args.since, args.until)
+
+    out = {
+        "campaign_id": campaign_id,
+        "since": args.since,
+        "until": args.until,
+        "insights": result.insights,
+        "status": result.status,
+    }
+
+    out_path = f"campaign_{campaign_id}_{args.since}_to_{args.until}_insights.json".replace(':', '_')
+    with open(out_path, 'w') as f:
+        json.dump(out, f, indent=2)
+
+    print(f"✓ Saved: {out_path}")
+    return 0
+
+
 def export_manual_guide_command(args):
     """Export manual ad setup guide from config file"""
     config_path = Path(args.config_path)
@@ -1409,6 +1483,35 @@ def main():
         help="Test mode - log API calls without executing (no Meta API calls made)"
     )
 
+    # Monitor Meta command
+    monitor_parser = subparsers.add_parser(
+        "monitor-meta",
+        help="Fetch Meta campaign status + insights for a deployed campaign"
+    )
+    monitor_parser.add_argument(
+        "--deployment-result",
+        help="Path to *_deployment_result.json produced by deploy-to-meta"
+    )
+    monitor_parser.add_argument(
+        "--campaign-id",
+        help="Campaign ID (if you don't have a deployment result file)"
+    )
+    monitor_parser.add_argument(
+        "--since",
+        required=True,
+        help="Start date (YYYY-MM-DD)"
+    )
+    monitor_parser.add_argument(
+        "--until",
+        required=True,
+        help="End date (YYYY-MM-DD)"
+    )
+    monitor_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Log what would be queried (no API calls)"
+    )
+
     # Export manual guide command
     export_parser = subparsers.add_parser(
         "export-manual-guide",
@@ -1436,6 +1539,8 @@ def main():
         return test_creative_command(args)
     elif args.command == "deploy-to-meta":
         return deploy_to_meta_command(args)
+    elif args.command == "monitor-meta":
+        return monitor_meta_command(args)
     elif args.command == "export-manual-guide":
         return export_manual_guide_command(args)
 
