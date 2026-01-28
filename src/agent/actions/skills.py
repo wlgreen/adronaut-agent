@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 from ..state import AgentState
 
@@ -24,12 +24,31 @@ class BaseSkill:
 class NodeWrapperSkill(BaseSkill):
     """Wrap an existing `*_node(state)` function in a skill interface."""
 
-    def __init__(self, name: str, description: str, fn):
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        fn: Callable[[AgentState], AgentState],
+        verify_fn: Callable[[AgentState], Tuple[bool, List[str]]] | None = None,
+        requires_approval_fn: Callable[[AgentState], bool] | None = None,
+    ):
         super().__init__(name=name, description=description)
         self._fn = fn
+        self._verify_fn = verify_fn
+        self._requires_approval_fn = requires_approval_fn
 
     def run(self, state: AgentState) -> AgentState:
         return self._fn(state)
+
+    def verify(self, state: AgentState) -> Tuple[bool, List[str]]:
+        if self._verify_fn is None:
+            return True, []
+        return self._verify_fn(state)
+
+    def requires_approval(self, state: AgentState) -> bool:
+        if self._requires_approval_fn is None:
+            return False
+        return bool(self._requires_approval_fn(state))
 
 
 class CreativeGenerationSkill(BaseSkill):
@@ -83,3 +102,10 @@ class CreativeGenerationSkill(BaseSkill):
         state["artifacts"][step_id] = {"creative": gen, "rating": rating}
         state.setdefault("messages", []).append("Creative prompts generated")
         return state
+
+    def verify(self, state: AgentState) -> Tuple[bool, List[str]]:
+        # If creative generation appended an error, treat as failure.
+        errs = state.get("errors", [])
+        if any("creative_generation:" in e for e in errs):
+            return False, ["Creative generation failed (missing inputs)"]
+        return True, []

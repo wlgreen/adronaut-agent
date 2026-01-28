@@ -251,28 +251,24 @@ def verify_step_node(state: AgentState) -> AgentState:
     step = steps[idx]
     action = step.get("action")
 
-    ok = True
-    notes: list[str] = []
+    registry = _get_action_registry()
+    skill = registry.get(action)
 
-    # Keep MVP checks (behavior-preserving). These can be moved into per-skill verify() later.
-    if action == "discovery":
-        kf = state.get("knowledge_facts", {})
-        ok = bool(kf.get("product_description") and kf.get("target_budget"))
-        if not ok:
-            notes.append("Missing product_description/target_budget")
-    if action == "insight":
-        ok = bool(state.get("current_strategy"))
-        if not ok:
-            notes.append("Strategy missing")
-    if action == "campaign_setup":
-        ok = bool(state.get("current_config"))
-        if not ok:
-            notes.append("Config missing")
+    # Unknown action => fail and replan
+    if skill is None:
+        ok = False
+        notes = [f"Unknown plan action: {action}"]
+    else:
+        try:
+            ok, notes = skill.verify(state)
+        except Exception as e:
+            ok = False
+            notes = [f"Verification error: {e}"]
 
     state["verification"] = {
         "step": step.get("id"),
         "action": action,
-        "ok": ok,
+        "ok": bool(ok),
         "notes": notes,
     }
 
