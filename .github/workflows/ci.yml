@@ -24,10 +24,13 @@ jobs:
           pip install pytest
 
       - name: Docs updated check
-        env:
-          DOCS_CHECK_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
-          DOCS_CHECK_HEAD: ${{ github.sha }}
         run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            export DOCS_CHECK_BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            export DOCS_CHECK_BASE="origin/main"
+          fi
+          export DOCS_CHECK_HEAD="${{ github.sha }}"
           python scripts/check_docs_updated.py
 
       - name: Test

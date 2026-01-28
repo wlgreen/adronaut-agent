@@ -31,9 +31,34 @@ def changed_files(base: str, head: str) -> List[str]:
     return [line for line in out.splitlines() if line.strip()]
 
 
+def _ref_exists(ref: str) -> bool:
+    try:
+        sh(["git", "rev-parse", "--verify", ref])
+        return True
+    except Exception:
+        return False
+
+
+def _merge_base(a: str, b: str) -> str | None:
+    try:
+        return sh(["git", "merge-base", a, b])
+    except Exception:
+        return None
+
+
 def main() -> int:
-    base = os.environ.get("DOCS_CHECK_BASE", "origin/main")
-    head = os.environ.get("DOCS_CHECK_HEAD", "HEAD")
+    base = os.environ.get("DOCS_CHECK_BASE")
+    head = os.environ.get("DOCS_CHECK_HEAD") or "HEAD"
+
+    # If base not provided (or invalid), pick a sane default.
+    if not base or not _ref_exists(base):
+        # Prefer comparing against the merge-base with origin/main when available.
+        if _ref_exists("origin/main"):
+            mb = _merge_base("origin/main", head)
+            base = mb or "origin/main"
+        else:
+            # Fallback for shallow/fork setups: compare to previous commit.
+            base = "HEAD~1" if _ref_exists("HEAD~1") else head
 
     files = changed_files(base, head)
     if not files:
