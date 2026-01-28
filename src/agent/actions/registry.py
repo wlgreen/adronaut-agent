@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
+from .repo_search import RepoSearchSkill
 from .skills import CreativeGenerationSkill, NodeWrapperSkill
 
 
@@ -68,6 +69,7 @@ def build_action_registry() -> Dict[str, object]:
             fn=agent_nodes.insight_node,
             verify_fn=_verify_insight,
         ),
+        "repo_search": RepoSearchSkill(),
         "creative_generation": CreativeGenerationSkill(),
         "campaign_setup": NodeWrapperSkill(
             name="campaign_setup",
