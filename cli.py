@@ -10,6 +10,7 @@ import sys
 import argparse
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 from src.agent.graph import get_campaign_agent
 from src.agent.state import create_initial_state
@@ -383,6 +384,167 @@ def print_execution_timeline(execution_plan):
     print()
 
 
+def save_output_artifacts(final_state, output_dir: Path) -> list[str]:
+    """Save output artifacts to disk.
+
+    Creates:
+    - report.md: human-readable strategy summary
+    - campaign_config.json: the generated campaign config
+    - creative_prompts.json: creative prompts + ratings from artifacts
+
+    Returns list of saved file paths.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+
+    # 1) campaign_config.json
+    if final_state.get("current_config"):
+        config_path = output_dir / "campaign_config.json"
+        with open(config_path, "w") as f:
+            json.dump(final_state["current_config"], f, indent=2)
+        saved.append(str(config_path))
+
+    # 2) creative_prompts.json (from artifacts)
+    artifacts = final_state.get("artifacts", {})
+    creatives = {}
+    for step_id, artifact in artifacts.items():
+        if isinstance(artifact, dict) and ("creative" in artifact or "rating" in artifact):
+            creatives[step_id] = artifact
+    if creatives:
+        creatives_path = output_dir / "creative_prompts.json"
+        with open(creatives_path, "w") as f:
+            json.dump(creatives, f, indent=2)
+        saved.append(str(creatives_path))
+
+    # 3) report.md
+    report_lines = [
+        f"# Campaign Report: {final_state['project_id']}",
+        "",
+        f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"**Session:** {final_state.get('session_num', 1)}",
+        f"**Phase:** {final_state.get('current_phase', 'N/A')}",
+        f"**Iteration:** {final_state.get('iteration', 0)}",
+        "",
+    ]
+
+    # Flow status
+    flow_status = final_state.get("flow_status", "unknown")
+    report_lines.append("## Flow Status")
+    report_lines.append("")
+    report_lines.append(f"- **Status:** {flow_status}")
+    completed_nodes = final_state.get("completed_nodes", [])
+    if completed_nodes:
+        report_lines.append(f"- **Completed:** {' → '.join(completed_nodes)}")
+    report_lines.append("")
+
+    # Knowledge facts
+    kg = final_state.get("knowledge_facts", {})
+    if kg:
+        report_lines.append("## Discovered Facts")
+        report_lines.append("")
+        report_lines.append("| Fact | Value | Confidence | Source |")
+        report_lines.append("|------|-------|------------|--------|")
+        for key, fact in kg.items():
+            val = str(fact.get("value", ""))[:50]
+            conf = fact.get("confidence", 0)
+            src = fact.get("source", "")
+            report_lines.append(f"| {key} | {val} | {conf:.0%} | {src} |")
+        report_lines.append("")
+
+    # Strategy
+    strategy = final_state.get("current_strategy", {})
+    if strategy:
+        report_lines.append("## Strategy")
+        report_lines.append("")
+
+        insights = strategy.get("insights", {})
+        if insights.get("patterns"):
+            report_lines.append("### Patterns Identified")
+            for p in insights["patterns"]:
+                report_lines.append(f"- {p}")
+            report_lines.append("")
+
+        if insights.get("strengths"):
+            report_lines.append("### Strengths")
+            for s in insights["strengths"]:
+                report_lines.append(f"- ✓ {s}")
+            report_lines.append("")
+
+        if insights.get("weaknesses"):
+            report_lines.append("### Weaknesses")
+            for w in insights["weaknesses"]:
+                report_lines.append(f"- ⚠ {w}")
+            report_lines.append("")
+
+        audience = strategy.get("target_audience", {})
+        if audience:
+            report_lines.append("### Target Audience")
+            if audience.get("primary_segments"):
+                segs = audience["primary_segments"]
+                if isinstance(segs, list):
+                    segs = ", ".join(segs)
+                report_lines.append(f"- **Segments:** {segs}")
+            demo = audience.get("demographics", {})
+            if isinstance(demo, dict):
+                report_lines.append(f"- **Demographics:** Age {demo.get('age', 'N/A')}, {demo.get('gender', 'all')}, {demo.get('location', 'N/A')}")
+            report_lines.append("")
+
+        creative = strategy.get("creative_strategy", {})
+        if creative:
+            report_lines.append("### Creative Strategy")
+            if creative.get("messaging_angles"):
+                for angle in creative["messaging_angles"][:3]:
+                    report_lines.append(f"- {angle}")
+            report_lines.append("")
+
+    # Campaign config summary
+    config = final_state.get("current_config", {})
+    if config:
+        report_lines.append("## Campaign Configuration")
+        report_lines.append("")
+        if "meta" in config:
+            meta = config["meta"]
+            report_lines.append("### Meta Ads")
+            report_lines.append(f"- **Daily Budget:** ${meta.get('daily_budget', 0)}")
+            report_lines.append(f"- **Objective:** {meta.get('objective', 'N/A')}")
+            report_lines.append(f"- **Campaign:** {meta.get('campaign_name', 'N/A')}")
+            report_lines.append("")
+        if "tiktok" in config:
+            tt = config["tiktok"]
+            report_lines.append("### TikTok Ads")
+            report_lines.append(f"- **Daily Budget:** ${tt.get('daily_budget', 0)}")
+            report_lines.append(f"- **Objective:** {tt.get('objective', 'N/A')}")
+            report_lines.append("")
+        report_lines.append("Full config saved to `campaign_config.json`.")
+        report_lines.append("")
+
+    # Creative prompts summary
+    if creatives:
+        report_lines.append("## Creative Prompts")
+        report_lines.append("")
+        report_lines.append(f"Generated {len(creatives)} creative prompt(s). See `creative_prompts.json` for details.")
+        for step_id, artifact in creatives.items():
+            rating = artifact.get("rating", {})
+            score = rating.get("overall_score", "N/A")
+            report_lines.append(f"- **{step_id}**: score {score}")
+        report_lines.append("")
+
+    # Errors
+    errors = final_state.get("errors", [])
+    if errors:
+        report_lines.append("## Errors")
+        report_lines.append("")
+        for e in errors:
+            report_lines.append(f"- ⚠ {e}")
+        report_lines.append("")
+
+    report_path = output_dir / "report.md"
+    report_path.write_text("\n".join(report_lines))
+    saved.append(str(report_path))
+
+    return saved
+
+
 def print_results(final_state):
     """Print session results"""
     print("\n" + "=" * 60)
@@ -675,6 +837,15 @@ def run_command(args):
 
         # Print results
         print_results(final_state)
+
+        # Save output artifacts
+        output_dir = Path("output") / project_id
+        saved_files = save_output_artifacts(final_state, output_dir)
+        if saved_files:
+            print("\n📁 Output artifacts saved:")
+            for f in saved_files:
+                print(f"  • {f}")
+            print()
 
         # Finish tracking
         tracker.finish()

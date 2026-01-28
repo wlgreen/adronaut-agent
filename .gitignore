@@ -25,3 +25,4 @@ campaign_*.json
 # Local run artifacts
 snapshots/
 local_storage/
+output/
