@@ -1004,6 +1004,8 @@ def deploy_to_meta_command(args):
         meta_section = config.get("meta", {})
         result_out = {
             **result,
+            "project_id": config.get("project_id"),
+            "iteration": config.get("iteration"),
             "config_path": str(config_path),
             "guardrails": {
                 "daily_cap": meta_section.get("daily_budget"),
@@ -1013,13 +1015,14 @@ def deploy_to_meta_command(args):
 
         from src.storage.paths import project_artifact_kind_dir
 
-        # Best-effort: infer project_id from config filename (campaign_<project_id>_vN.json)
-        project_id = "unknown"
-        stem = config_path.stem
-        if stem.startswith("campaign_"):
-            parts = stem.split("_v", 1)[0].split("campaign_", 1)
-            if len(parts) == 2 and parts[1]:
-                project_id = parts[1]
+        project_id = result_out.get("project_id") or "unknown"
+        if project_id == "unknown":
+            # Best-effort: infer project_id from config filename (campaign_<project_id>_vN.json)
+            stem = config_path.stem
+            if stem.startswith("campaign_"):
+                parts = stem.split("_v", 1)[0].split("campaign_", 1)
+                if len(parts) == 2 and parts[1]:
+                    project_id = parts[1]
 
         deployments_dir = project_artifact_kind_dir(project_id, "deployments")
         deployments_dir.mkdir(parents=True, exist_ok=True)
@@ -1160,20 +1163,37 @@ def auto_watch_command(args):
         print("Guardrails breached (non-prepare mode): no agent run triggered")
         return 0
 
-    injected = {
-        "source": "meta_watch",
-        "timestamp": ts,
-        "campaign_id": campaign_id,
-        "today": today_metrics,
-        "trailing_7d": trailing_metrics,
-        "alerts": [a.__dict__ for a in alerts],
-        "guardrails": {"daily_cap": daily_cap, "target_cpa": target_cpa},
-    }
+    from src.integrations.meta_watch_mapper import to_experiment_result
+    from src.storage.local_checkpoint import load_full_state, save_full_state
 
-    st = create_initial_state(project_id=project_id, uploaded_files=[], session_num=1)
-    st["injected_experiment_results"] = [injected]
+    injected = to_experiment_result(
+        project_id=project_id,
+        timestamp=ts,
+        campaign_id=campaign_id,
+        guardrails={"daily_cap": daily_cap, "target_cpa": target_cpa},
+        today_metrics=today_metrics,
+        trailing_metrics=trailing_metrics,
+        alerts=[a.__dict__ for a in alerts],
+    )
 
-    # Run graph; should end at approval gate for adjustment/campaign_setup
+    # Load existing state if available so resumption is robust
+    existing = load_full_state(project_id)
+    if isinstance(existing, dict):
+        st = existing
+    else:
+        st = create_initial_state(project_id=project_id, uploaded_files=[], session_num=1)
+
+    st.setdefault("experiment_results", [])
+    if isinstance(st["experiment_results"], list):
+        st["experiment_results"].append(injected)
+
+    # Persist immediately before running the agent
+    try:
+        save_full_state(project_id, dict(st))
+    except Exception:
+        pass
+
+    # Invoke agent; it will reflect/replan and stop at approval gate
     agent = get_campaign_agent()
     out = agent.invoke(st)
 
@@ -1371,9 +1391,9 @@ def watch_meta_command(args):
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     from src.storage.paths import project_artifact_kind_dir
 
-    project_id = "unknown"
-    # If provided a deployment result file, try to infer project_id from its filename
-    if args.deployment_result:
+    project_id = dep.get("project_id") or "unknown"
+    if project_id == "unknown" and args.deployment_result:
+        # Backward compat: infer from filename
         stem = Path(args.deployment_result).stem
         if stem.startswith("campaign_"):
             parts = stem.split("_v", 1)[0].split("campaign_", 1)
@@ -1386,6 +1406,7 @@ def watch_meta_command(args):
 
     snapshot = {
         "timestamp": ts,
+        "project_id": project_id,
         "campaign_id": campaign_id,
         "today": {"date": today_s, **today_metrics},
         "trailing_7d": {"since": trailing_start, "until": trailing_end, **trailing_metrics},
@@ -2076,6 +2097,17 @@ def main():
         help="Custom output file path (default: output/test_creatives/test_creative_<timestamp>.json)"
     )
 
+    # Status command
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show a concise local status summary for a project"
+    )
+    status_parser.add_argument(
+        "--project-id",
+        required=True,
+        help="Project identifier"
+    )
+
     # Auto-watch Meta command
     auto_watch_parser = subparsers.add_parser(
         "auto-watch",
@@ -2223,6 +2255,14 @@ def main():
         return monitor_meta_command(args)
     elif args.command == "watch-meta":
         return watch_meta_command(args)
+    elif args.command == "status":
+        from src.storage.local_checkpoint import load_full_state
+        from src.storage.status import project_status_summary
+
+        st = load_full_state(args.project_id) or {"project_id": args.project_id}
+        summary = project_status_summary(st)
+        print(json.dumps(summary, indent=2))
+        return 0
     elif args.command == "auto-watch":
         return auto_watch_command(args)
     elif args.command == "setup-cron":

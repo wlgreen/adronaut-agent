@@ -9,6 +9,7 @@ def test_watch_meta_emits_alerts_and_saves_snapshot(tmp_path, monkeypatch):
 
     # Create deployment result with guardrails
     dep = {
+        "project_id": "p1",
         "campaign_id": "cmp_123",
         "guardrails": {"daily_cap": 50.0, "target_cpa": 10.0},
     }
@@ -71,7 +72,7 @@ def test_watch_meta_emits_alerts_and_saves_snapshot(tmp_path, monkeypatch):
     code = cli.watch_meta_command(args)
     assert code == 0
 
-    snaps = sorted((tmp_path / "projects" / "unknown" / "artifacts" / "snapshots").glob("*.json"))
+    snaps = sorted((tmp_path / "projects" / "p1" / "artifacts" / "snapshots").glob("*.json"))
     assert snaps, "expected a snapshot json to be created"
 
     snap = json.loads(snaps[-1].read_text())

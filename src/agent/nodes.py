@@ -1286,6 +1286,11 @@ def campaign_setup_node(state: AgentState) -> AgentState:
         # Generate campaign config
         config = generate_campaign_config(state)
 
+        # Embed project metadata to avoid filename-based inference later
+        if isinstance(config, dict):
+            config.setdefault("project_id", state.get("project_id"))
+            config.setdefault("iteration", state.get("iteration"))
+
         state["current_config"] = config
         state["config_history"].append({
             "iteration": state["iteration"],
@@ -1383,6 +1388,11 @@ def adjustment_node(state: AgentState) -> AgentState:
         # Apply patch to create new config
         # For MVP, we'll just store the patch and generate new config
         new_config = generate_campaign_config(state, patch=patch)
+
+        # Embed project metadata
+        if isinstance(new_config, dict):
+            new_config.setdefault("project_id", state.get("project_id"))
+            new_config.setdefault("iteration", state.get("iteration", 0) + 1)
 
         # Update state
         state["patch_history"].append({

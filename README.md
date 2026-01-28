@@ -152,7 +152,7 @@ Creates a snapshot in:
 
 ### Auto Watch (prepare mode)
 
-Automatically pulls metrics from the Meta API and, if guardrails breach, triggers the agent up to the approval gate.
+Automatically pulls metrics from the Meta API and, if guardrails breach, **appends a deterministic `experiment_results` entry** and triggers the agent up to the approval gate.
 
 ```bash
 python cli.py auto-watch --project-id eco-bottle-001 --mode prepare
@@ -160,6 +160,13 @@ python cli.py auto-watch --project-id eco-bottle-001 --mode prepare
 
 It persists the fetched payload for debugging under:
 `$ADRONAUT_HOME/projects/<project_id>/analysis/derived/meta_watch/<timestamp>.json`
+
+### Status
+
+Print a concise local status summary:
+```bash
+python cli.py status --project-id eco-bottle-001
+```
 
 ### Setup Cron
 

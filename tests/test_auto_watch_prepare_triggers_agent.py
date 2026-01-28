@@ -44,7 +44,7 @@ def test_auto_watch_prepare_triggers_agent(tmp_path, monkeypatch):
 
     class DummyAgent:
         def invoke(self, state):
-            assert state.get("injected_experiment_results"), "expected injected_experiment_results"
+            assert state.get("experiment_results"), "expected experiment_results"
             # simulate approval pending
             state["approval_status"] = "pending"
             return state

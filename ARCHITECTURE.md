@@ -1457,6 +1457,10 @@ class ProjectPersistence:
 
 ### Local-first storage (recommended)
 
+Notes:
+- Generated configs embed `project_id` + `iteration` to avoid filename-based inference.
+- Auto-watch writes a deterministic Meta-derived entry into `experiment_results` (source: `meta_watch`).
+
 Set:
 - `ADRONAUT_HOME=~/adronaut`
 - `ADRONAUT_DISABLE_DB=1`
