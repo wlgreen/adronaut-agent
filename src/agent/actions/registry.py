@@ -44,45 +44,65 @@ def build_action_registry() -> Dict[str, object]:
     return {
         "discovery": NodeWrapperSkill(
             name="discovery",
-            description="Discover product/context and populate knowledge_facts.",
+            description=(
+                "Infer project context and populate knowledge_facts (e.g., product_description, "
+                "target_budget, audience hints)."
+            ),
             fn=agent_nodes.discovery_node,
             verify_fn=_verify_discovery,
         ),
         "data_collection": NodeWrapperSkill(
             name="data_collection",
-            description="Collect/parse input data into state (historical/market/user inputs).",
+            description=(
+                "Parse uploaded files/inputs into state: historical_data, market_data, user_inputs, "
+                "and experiment_results (if present)."
+            ),
             fn=agent_nodes.data_collection_node,
         ),
         "insight": NodeWrapperSkill(
             name="insight",
-            description="Generate insights/strategy from data.",
+            description=(
+                "Generate current_strategy + experiment_plan from collected data and update key insights "
+                "(may also enrich knowledge_facts)."
+            ),
             fn=agent_nodes.insight_node,
             verify_fn=_verify_insight,
         ),
+        "creative_generation": CreativeGenerationSkill(),
         "campaign_setup": NodeWrapperSkill(
             name="campaign_setup",
-            description="Generate campaign configuration(s) based on strategy.",
+            description=(
+                "Produce current_config (platform configs, budgets, targeting, creatives) and append to config_history; "
+                "may require approval if it will be deployed externally."
+            ),
             fn=agent_nodes.campaign_setup_node,
             verify_fn=_verify_campaign_setup,
             requires_approval_fn=_approval_campaign_or_adjustment,
         ),
         "reflection": NodeWrapperSkill(
             name="reflection",
-            description="Analyze experiment results and summarize performance.",
+            description=(
+                "Analyze experiment_results to summarize performance deltas and populate patch/metrics context "
+                "for the next iteration."
+            ),
             fn=agent_nodes.reflection_node,
         ),
         "adjustment": NodeWrapperSkill(
             name="adjustment",
-            description="Generate patch/adjustment strategy and update configuration.",
+            description=(
+                "Generate patch strategy and update current_config; append patch_history and/or new config version "
+                "for optimization iterations."
+            ),
             fn=agent_nodes.adjustment_node,
             requires_approval_fn=_approval_campaign_or_adjustment,
         ),
         "save": NodeWrapperSkill(
             name="save",
-            description="Persist state/artifacts for resumption.",
+            description=(
+                "Persist project/session state for resumption (plan/artifacts/flow tracking + configs/strategy)."
+            ),
             fn=agent_nodes.save_state_node,
         ),
-        "creative_generation": CreativeGenerationSkill(),
     }
 
 
