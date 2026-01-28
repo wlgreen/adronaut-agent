@@ -3,21 +3,22 @@
 Single LLM call that:
 1. Analyzes state and decides the approach (initialize/reflect/enrich/continue)
 2. Produces a TODO checklist of steps to execute
+
+Option A refactor: actions are dispatched via a registry of pluggable skills.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Dict
 
+from .actions import build_action_registry, list_available_actions
 from .state import AgentState
 from .planning import default_plan_template, normalize_todo_list
-from ..modules.creative_generator import generate_creative_prompts
-from ..modules.creative_rater import rate_creative_prompt
 from ..llm import gemini as gemini_mod
 
 
-PLANNER_SYSTEM = """You are a planning agent for an ads/marketing automation product.
+PLANNER_SYSTEM_TEMPLATE = """You are a planning agent for an ads/marketing automation product.
 
 Your job is to:
 1. Analyze the current project state and decide what approach to take
@@ -32,9 +33,12 @@ Decision types:
 Rules for the plan:
 - Output STRICT JSON with both "decision" and "steps" fields
 - Steps must be small and executable
-- Use only these actions: discovery, data_collection, insight, creative_generation, campaign_setup, reflection, adjustment, save
+- Use ONLY the available actions listed below
 - Each step must include: id, action, rationale, success, requires_approval
 - Set requires_approval=true for any step that could spend money or push changes externally
+
+AVAILABLE ACTIONS:
+{available_actions}
 """
 
 
@@ -68,19 +72,33 @@ Respond with JSON in this exact format:
 """
 
 
+_ACTION_REGISTRY: Dict[str, object] | None = None
+
+
+def _get_action_registry() -> Dict[str, object]:
+    global _ACTION_REGISTRY
+    if _ACTION_REGISTRY is None:
+        _ACTION_REGISTRY = build_action_registry()
+    return _ACTION_REGISTRY
+
+
 def _build_planner_prompt(state: AgentState) -> str:
     """Build the prompt for the combined router+planner."""
     file_analyses = state.get("file_analyses", [])
-    file_analyses_str = "\n".join([
-        f"- {fa.get('file_name', 'unknown')}: {fa.get('type', 'unknown')}, {fa.get('row_count', 0)} rows"
-        for fa in file_analyses
-    ]) or "No files uploaded"
+    file_analyses_str = "\n".join(
+        [
+            f"- {fa.get('file_name', 'unknown')}: {fa.get('type', 'unknown')}, {fa.get('row_count', 0)} rows"
+            for fa in file_analyses
+        ]
+    ) or "No files uploaded"
 
     known_facts = state.get("knowledge_facts", {})
-    facts_str = "\n".join([
-        f"- {k}: {v.get('value', '')[:50]}... (confidence: {v.get('confidence', 0):.0%})"
-        for k, v in list(known_facts.items())[:10]
-    ]) or "None yet"
+    facts_str = "\n".join(
+        [
+            f"- {k}: {v.get('value', '')[:50]}... (confidence: {v.get('confidence', 0):.0%})"
+            for k, v in list(known_facts.items())[:10]
+        ]
+    ) or "None yet"
 
     return PLANNER_PROMPT_TEMPLATE.format(
         project_loaded=state.get("project_loaded", False),
@@ -103,7 +121,6 @@ def planning_node(state: AgentState) -> AgentState:
     # Check for existing valid plan (resumption case)
     existing = state.get("plan")
     if isinstance(existing, dict) and isinstance(existing.get("steps"), list) and existing["steps"]:
-        # Reuse existing plan
         state["plan_step_index"] = state.get("plan_step_index", 0)
         state["approval_status"] = None
         state["requires_approval"] = False
@@ -112,22 +129,22 @@ def planning_node(state: AgentState) -> AgentState:
         state["messages"].append("Plan reused (resuming)")
         return state
 
-    # Make combined routing + planning LLM call
+    registry = _get_action_registry()
+    available_actions = "\n".join(list_available_actions(registry))
+    planner_system = PLANNER_SYSTEM_TEMPLATE.format(available_actions=available_actions)
+
     gemini = gemini_mod.get_gemini()
 
     try:
         result = gemini.generate_json(
             prompt=_build_planner_prompt(state),
-            system_instruction=PLANNER_SYSTEM,
+            system_instruction=planner_system,
             temperature=0.2,
             task_name="Planning",
         )
 
-        # Extract decision (routing)
         decision = result.get("decision", "initialize")
         reasoning = result.get("reasoning", "")
-
-        # Extract and normalize steps
         steps = normalize_todo_list(result.get("steps", []))
 
         state["decision"] = decision
@@ -144,7 +161,6 @@ def planning_node(state: AgentState) -> AgentState:
         state["messages"].append(f"Reasoning: {reasoning}")
 
     except Exception as e:
-        # Fallback to default plan
         state["decision"] = "initialize"
         state["decision_reasoning"] = f"Fallback due to error: {e}"
         state["plan"] = default_plan_template("initialize")
@@ -163,7 +179,7 @@ def planning_node(state: AgentState) -> AgentState:
 
 
 def execute_step_node(state: AgentState) -> AgentState:
-    """Execute the current plan step by dispatching to existing nodes/modules."""
+    """Execute the current plan step by dispatching to action skills."""
     plan = state.get("plan") or {}
     steps = plan.get("steps") or []
     idx = int(state.get("plan_step_index", 0))
@@ -200,62 +216,25 @@ def execute_step_node(state: AgentState) -> AgentState:
     state["current_step_id"] = step_id
     state.setdefault("artifacts", {})
 
-    # Certain actions should require approval in a real product (spend money)
-    if action in ("campaign_setup", "adjustment"):
+    registry = _get_action_registry()
+    skill = registry.get(action)
+
+    if skill is None:
+        state.setdefault("errors", []).append(f"Unknown plan action: {action}")
+        return state
+
+    # Approval flag: allow planner to request it, and allow the skill to enforce it.
+    requires_approval = bool(step.get("requires_approval"))
+    try:
+        requires_approval = requires_approval or bool(skill.requires_approval(state))
+    except Exception:
+        # Be robust; approval should never crash execution.
+        pass
+
+    if requires_approval:
         state["requires_approval"] = True
 
-    # Dispatch to existing nodes via imports to avoid rewriting logic.
-    from .nodes import (
-        discovery_node,
-        data_collection_node,
-        insight_node,
-        campaign_setup_node,
-        reflection_node,
-        adjustment_node,
-        save_state_node,
-    )
-
-    if action == "discovery":
-        state = discovery_node(state)
-    elif action == "data_collection":
-        state = data_collection_node(state)
-    elif action == "insight":
-        state = insight_node(state)
-    elif action == "campaign_setup":
-        state = campaign_setup_node(state)
-    elif action == "reflection":
-        state = reflection_node(state)
-    elif action == "adjustment":
-        state = adjustment_node(state)
-    elif action == "creative_generation":
-        # Minimal creative generation: generate prompts for a single test combo.
-        user_inputs = state.get("user_inputs", {})
-        product_desc = user_inputs.get("product_description") or state.get("knowledge_facts", {}).get("product_description", {}).get("value")
-        if not product_desc:
-            state["errors"].append("creative_generation: missing product_description")
-        else:
-            combo = {
-                "combo_id": "demo_combo_1",
-                "platform": "Meta",
-                "audience": user_inputs.get("target_audience", "General"),
-                "creative_style": "Professional",
-            }
-            gen = generate_creative_prompts(test_combination=combo, strategy=state.get("current_strategy", {}), user_inputs={"product_description": product_desc})
-            rating = rate_creative_prompt(
-                original_prompt=gen.get("visual_prompt", ""),
-                reviewed_prompt=gen.get("visual_prompt", ""),
-                product_description=product_desc,
-                required_keywords=None,
-                brand_name=None,
-                original_requirements={"platform": "Meta"},
-            )
-            state["artifacts"][step_id] = {"creative": gen, "rating": rating}
-            state["messages"].append("Creative prompts generated")
-    elif action == "save":
-        state = save_state_node(state)
-    else:
-        state["errors"].append(f"Unknown plan action: {action}")
-
+    state = skill.run(state)
     return state
 
 
@@ -273,9 +252,9 @@ def verify_step_node(state: AgentState) -> AgentState:
     action = step.get("action")
 
     ok = True
-    notes = []
+    notes: list[str] = []
 
-    # Light-weight checks (MVP)
+    # Keep MVP checks (behavior-preserving). These can be moved into per-skill verify() later.
     if action == "discovery":
         kf = state.get("knowledge_facts", {})
         ok = bool(kf.get("product_description") and kf.get("target_budget"))
@@ -301,7 +280,6 @@ def verify_step_node(state: AgentState) -> AgentState:
         state["plan_step_index"] = idx + 1
         state["messages"].append(f"✓ Verified {action}")
     else:
-        # MVP behavior: replan once by resetting plan
         state["messages"].append(f"✗ Verification failed for {action}: {notes}")
         state["plan_step_index"] = 0
         state["plan"] = None
