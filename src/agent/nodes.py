@@ -7,6 +7,7 @@ from typing import Dict, Any
 from functools import wraps
 from tavily import TavilyClient
 from ..database.persistence import ProjectPersistence, SessionPersistence, CyclePersistence
+from ..storage.local_checkpoint import load_checkpoint, save_checkpoint
 from ..modules.data_loader import DataLoader
 from ..modules.insight import generate_insights_and_strategy
 from ..modules.campaign import generate_campaign_config
@@ -58,6 +59,10 @@ def track_node(func):
                 try:
                     project_data = state_to_project_dict(result, include_knowledge_facts=True)
                     ProjectPersistence.save_project(project_data)
+                    try:
+                        save_checkpoint(result["project_id"], project_data)
+                    except Exception as checkpoint_error:
+                        tracker.log_message(f"⚠ Local checkpoint save failed: {str(checkpoint_error)}", "warning")
                     tracker.log_message(f"✓ Auto-saved state after {node_name}", "info")
                 except Exception as save_error:
                     # Try without knowledge_facts if schema not updated
@@ -65,6 +70,10 @@ def track_node(func):
                         try:
                             project_data = state_to_project_dict(result, include_knowledge_facts=False)
                             ProjectPersistence.save_project(project_data)
+                            try:
+                                save_checkpoint(result["project_id"], project_data)
+                            except Exception as checkpoint_error:
+                                tracker.log_message(f"⚠ Local checkpoint save failed: {str(checkpoint_error)}", "warning")
                             tracker.log_message(f"✓ Auto-saved state after {node_name} (without knowledge_facts)", "info")
                         except Exception as retry_error:
                             tracker.log_message(f"⚠ Auto-save failed: {str(retry_error)}", "warning")
@@ -83,6 +92,10 @@ def track_node(func):
             try:
                 project_data = state_to_project_dict(state, include_knowledge_facts=False)
                 ProjectPersistence.save_project(project_data)
+                try:
+                    save_checkpoint(state["project_id"], project_data)
+                except Exception as checkpoint_error:
+                    tracker.log_message(f"⚠ Local checkpoint save failed: {str(checkpoint_error)}", "warning")
                 tracker.log_message(f"✓ Saved failed state after {node_name}", "info")
             except Exception as save_error:
                 tracker.log_message(f"⚠ Failed to save error state: {str(save_error)}", "warning")
@@ -107,8 +120,15 @@ def load_context_node(state: AgentState) -> AgentState:
     """
     project_id = state["project_id"]
 
-    # Try to load project from database
+    # Try to load project from database first
     project_data = ProjectPersistence.load_project(project_id)
+
+    # Fallback: local checkpoint (useful for offline resumption)
+    if not project_data:
+        checkpoint = load_checkpoint(project_id)
+        if checkpoint:
+            project_data = checkpoint
+            state["messages"].append(f"Loaded project from local checkpoint: {project_id}")
 
     if project_data:
         # Project exists, load it into state
