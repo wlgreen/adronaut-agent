@@ -1,7 +1,8 @@
 """
 LangGraph workflow assembly with resumption support
 
-Now supports an agentic Plan → Execute → Verify loop.
+Uses an agentic Plan → Execute → Verify loop.
+Router + Planning are merged into a single planning_node.
 """
 
 from langgraph.graph import StateGraph, END
@@ -9,16 +10,8 @@ from .state import AgentState
 from .nodes import (
     load_context_node,
     analyze_files_node,
-    user_input_node,
-    discovery_node,
-    data_collection_node,
-    insight_node,
-    campaign_setup_node,
-    reflection_node,
-    adjustment_node,
     save_state_node,
 )
-from .router import router_node, get_next_node, get_resume_node
 from .plan_nodes import planning_node, execute_step_node, verify_step_node
 
 
@@ -32,7 +25,8 @@ def should_skip_to_resume_point(state: AgentState) -> str:
         return "normal"
     if last_completed == "load_context":
         return "normal"
-    if "analyze_files" in completed_nodes and "router" in completed_nodes:
+    # If we've already done analyze_files and planning, resume into planning
+    if "analyze_files" in completed_nodes and "planning" in completed_nodes:
         return "resume"
     return "normal"
 
@@ -60,48 +54,27 @@ def create_campaign_agent_graph():
     # Base nodes
     workflow.add_node("load_context", load_context_node)
     workflow.add_node("analyze_files", analyze_files_node)
-    workflow.add_node("router", router_node)
 
-    # Existing nodes (kept as reusable tools + backward compatibility)
-    workflow.add_node("discovery", discovery_node)
-    workflow.add_node("user_input", user_input_node)
-    workflow.add_node("data_collection", data_collection_node)
-    workflow.add_node("insight", insight_node)
-    workflow.add_node("campaign_setup", campaign_setup_node)
-    workflow.add_node("reflection", reflection_node)
-    workflow.add_node("adjustment", adjustment_node)
+    # Save node
     workflow.add_node("save", save_state_node)
 
-    # Agentic loop nodes
+    # Agentic loop nodes (planning now includes routing)
     workflow.add_node("planning", planning_node)
     workflow.add_node("execute_step", execute_step_node)
     workflow.add_node("verify_step", verify_step_node)
 
+    # Entry point
     workflow.set_entry_point("load_context")
 
+    # Flow: load_context → analyze_files (or resume to planning)
     workflow.add_conditional_edges(
         "load_context",
         should_skip_to_resume_point,
-        {"normal": "analyze_files", "resume": "router"},
+        {"normal": "analyze_files", "resume": "planning"},
     )
 
-    workflow.add_edge("analyze_files", "router")
-
-    # Router now defaults into planning
-    workflow.add_conditional_edges(
-        "router",
-        get_next_node,
-        {
-            "discovery": "planning",
-            "user_input": "planning",
-            "data_collection": "planning",
-            "insight": "planning",
-            "campaign_setup": "planning",
-            "reflection": "planning",
-            "adjustment": "planning",
-            "save": "save",
-        },
-    )
+    # analyze_files → planning (merged router + planner)
+    workflow.add_edge("analyze_files", "planning")
 
     # Planning → Execute → Verify loop
     workflow.add_conditional_edges(

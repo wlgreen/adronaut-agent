@@ -6,22 +6,14 @@ def test_plan_execute_verify_loop_smoke(monkeypatch):
     os.environ["INTERACTIVE_MODE"] = "false"
     os.environ.pop("TAVILY_API_KEY", None)
 
-    # --- Patch Gemini so router/planner don't require real API key ---
+    # --- Patch Gemini so planning doesn't require real API key ---
     class DummyGemini:
         def generate_json(self, prompt=None, system_instruction=None, temperature=None, task_name=None, **kwargs):
-            # Router decision
-            if task_name and "Router" in task_name:
-                return {
-                    "decision": "initialize",
-                    "reasoning": "test",
-                    "next_action": "planning",
-                    "confidence": 1.0,
-                }
-            # Planner output
+            # Combined planner output (includes decision + steps)
             if task_name and "Planning" in task_name:
                 return {
-                    "objective": "test",
-                    "version": 1,
+                    "decision": "initialize",
+                    "reasoning": "New project, starting from scratch",
                     "steps": [
                         {"id": "s_discovery", "action": "discovery", "rationale": "", "success": ""},
                         {"id": "s_collect", "action": "data_collection", "rationale": "", "success": ""},
@@ -33,15 +25,13 @@ def test_plan_execute_verify_loop_smoke(monkeypatch):
             return {}
 
     import src.llm.gemini as gem
-    import src.agent.router as router
     monkeypatch.setattr(gem, "get_gemini", lambda: DummyGemini())
-    monkeypatch.setattr(router, "get_gemini", lambda: DummyGemini())
 
     # Import after patching Gemini
     from src.agent.state import create_initial_state
     from src.agent.graph import get_campaign_agent
 
-    # --- Patch persistence to no-op (avoid Supabase) ---
+    # --- Patch persistence to no-op (avoid file I/O during test) ---
     import src.database.persistence as persistence
     monkeypatch.setattr(persistence.ProjectPersistence, "load_project", staticmethod(lambda project_id: None))
     monkeypatch.setattr(persistence.ProjectPersistence, "save_project", staticmethod(lambda project_data: None))
@@ -87,15 +77,14 @@ def test_plan_execute_verify_loop_smoke(monkeypatch):
     monkeypatch.setattr(nodes, "campaign_setup_node", fake_campaign_setup)
     monkeypatch.setattr(nodes, "save_state_node", fake_save)
 
-    # Make sure plan_nodes dispatch sees patched functions
-    # (execute_step_node imports nodes inside the function)
-
     # --- Run graph ---
     state = create_initial_state(project_id="test-project", uploaded_files=[], session_num=1)
     agent = get_campaign_agent()
     out = agent.invoke(state)
 
+    # Assertions
     assert out.get("plan") is not None
+    assert out.get("decision") == "initialize"
     assert out.get("plan_step_index", 0) >= 3  # should have advanced through multiple steps
     assert out.get("current_strategy")
     assert out.get("current_config")

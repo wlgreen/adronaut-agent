@@ -1,85 +1,154 @@
-"""Plan/Execute/Verify nodes (agentic mode)."""
+"""Combined Planning node (routing + plan generation).
+
+Single LLM call that:
+1. Analyzes state and decides the approach (initialize/reflect/enrich/continue)
+2. Produces a TODO checklist of steps to execute
+"""
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from .state import AgentState
 from .planning import default_plan_template, normalize_todo_list
 from ..modules.creative_generator import generate_creative_prompts
 from ..modules.creative_rater import rate_creative_prompt
-from ..llm.gemini import get_gemini
+from ..llm import gemini as gemini_mod
 
 
 PLANNER_SYSTEM = """You are a planning agent for an ads/marketing automation product.
 
-Create a TODO checklist (a JSON array of steps) to go from inputs → artifacts → an actionable campaign config.
+Your job is to:
+1. Analyze the current project state and decide what approach to take
+2. Create a TODO checklist (JSON array of steps) to execute
 
-Rules:
-- Output STRICT JSON.
-- Output MUST be a JSON ARRAY (not an object).
-- Steps must be small and executable.
-- Use only these actions:
-  discovery, data_collection, insight, creative_generation, campaign_setup, reflection, adjustment, save
-- Each step must include: id, action, rationale, success, requires_approval.
-- Set requires_approval=true for any step that could spend money or push changes to Meta.
+Decision types:
+- "initialize": New project - start data collection, strategy building, campaign setup
+- "reflect": Project exists + experiment results uploaded - analyze and optimize
+- "enrich": Project exists + additional context uploaded - incorporate into strategy
+- "continue": Project exists but incomplete - continue from current phase
+
+Rules for the plan:
+- Output STRICT JSON with both "decision" and "steps" fields
+- Steps must be small and executable
+- Use only these actions: discovery, data_collection, insight, creative_generation, campaign_setup, reflection, adjustment, save
+- Each step must include: id, action, rationale, success, requires_approval
+- Set requires_approval=true for any step that could spend money or push changes externally
 """
 
 
-def _plan_prompt(state: AgentState) -> str:
-    file_types = [fa.get('type') for fa in state.get('file_analyses', [])]
-    return json.dumps({
-        "project_loaded": state.get("project_loaded"),
-        "decision": state.get("decision"),
-        "current_phase": state.get("current_phase"),
-        "iteration": state.get("iteration"),
-        "file_types": file_types,
-        "known_facts": list((state.get("knowledge_facts") or {}).keys())[:30],
-        "has_config": bool(state.get("current_config")),
-        "has_strategy": bool(state.get("current_strategy")),
-        "goal": "Demo an agentic workflow: analyze data -> generate creatives -> produce an ad plan/config; then iterate based on results.",
-    }, indent=2)
+PLANNER_PROMPT_TEMPLATE = """
+Analyze this context and create an execution plan:
+
+PROJECT STATE:
+- Project loaded: {project_loaded}
+- Current phase: {current_phase}
+- Iteration: {iteration}
+- Has strategy: {has_strategy}
+- Has config: {has_config}
+- Previous experiments: {num_experiments}
+
+UPLOADED FILES:
+{file_analyses}
+
+KNOWN FACTS:
+{known_facts}
+
+Respond with JSON in this exact format:
+{{
+  "decision": "initialize" | "reflect" | "enrich" | "continue",
+  "reasoning": "Why you chose this approach",
+  "steps": [
+    {{"id": "s1", "action": "discovery", "rationale": "...", "success": "...", "requires_approval": false}},
+    {{"id": "s2", "action": "data_collection", "rationale": "...", "success": "...", "requires_approval": false}},
+    ...
+  ]
+}}
+"""
+
+
+def _build_planner_prompt(state: AgentState) -> str:
+    """Build the prompt for the combined router+planner."""
+    file_analyses = state.get("file_analyses", [])
+    file_analyses_str = "\n".join([
+        f"- {fa.get('file_name', 'unknown')}: {fa.get('type', 'unknown')}, {fa.get('row_count', 0)} rows"
+        for fa in file_analyses
+    ]) or "No files uploaded"
+
+    known_facts = state.get("knowledge_facts", {})
+    facts_str = "\n".join([
+        f"- {k}: {v.get('value', '')[:50]}... (confidence: {v.get('confidence', 0):.0%})"
+        for k, v in list(known_facts.items())[:10]
+    ]) or "None yet"
+
+    return PLANNER_PROMPT_TEMPLATE.format(
+        project_loaded=state.get("project_loaded", False),
+        current_phase=state.get("current_phase", "initialized"),
+        iteration=state.get("iteration", 0),
+        has_strategy=bool(state.get("current_strategy")),
+        has_config=bool(state.get("current_config")),
+        num_experiments=len(state.get("experiment_results", [])),
+        file_analyses=file_analyses_str,
+        known_facts=facts_str,
+    )
 
 
 def planning_node(state: AgentState) -> AgentState:
-    """Create or refresh a plan.
+    """Combined routing + planning node.
 
-    Planner output is a TODO list (JSON array). Internally we wrap it into
-    state["plan"] = {"steps": [...], ...}.
-
-    If state already has a valid plan with steps (e.g., pre-seeded), we reuse it.
+    Single LLM call that decides the approach and produces a TODO list.
+    If state already has a valid plan, reuses it (for resumption).
     """
-    decision = state.get("decision") or "initialize"
-
+    # Check for existing valid plan (resumption case)
     existing = state.get("plan")
     if isinstance(existing, dict) and isinstance(existing.get("steps"), list) and existing["steps"]:
-        state["plan_step_index"] = 0
+        # Reuse existing plan
+        state["plan_step_index"] = state.get("plan_step_index", 0)
         state["approval_status"] = None
         state["requires_approval"] = False
         state.setdefault("artifacts", {})
         state.setdefault("verification", {})
-        state["messages"].append("Plan reused")
+        state["messages"].append("Plan reused (resuming)")
         return state
 
-    gemini = get_gemini()
+    # Make combined routing + planning LLM call
+    gemini = gemini_mod.get_gemini()
 
     try:
-        todo = gemini.generate_json(
-            prompt=_plan_prompt(state),
+        result = gemini.generate_json(
+            prompt=_build_planner_prompt(state),
             system_instruction=PLANNER_SYSTEM,
             temperature=0.2,
             task_name="Planning",
         )
-        steps = normalize_todo_list(todo)
+
+        # Extract decision (routing)
+        decision = result.get("decision", "initialize")
+        reasoning = result.get("reasoning", "")
+
+        # Extract and normalize steps
+        steps = normalize_todo_list(result.get("steps", []))
+
+        state["decision"] = decision
+        state["decision_reasoning"] = reasoning
         state["plan"] = {
             "objective": "Run marketing agent workflow",
             "version": 1,
             "decision": decision,
+            "reasoning": reasoning,
             "steps": steps,
         }
-    except Exception:
-        state["plan"] = default_plan_template(decision)
+
+        state["messages"].append(f"Decision: {decision}")
+        state["messages"].append(f"Reasoning: {reasoning}")
+
+    except Exception as e:
+        # Fallback to default plan
+        state["decision"] = "initialize"
+        state["decision_reasoning"] = f"Fallback due to error: {e}"
+        state["plan"] = default_plan_template("initialize")
+        state["messages"].append(f"Planning fallback: {e}")
 
     state["plan_step_index"] = 0
     state["approval_status"] = None
@@ -88,6 +157,8 @@ def planning_node(state: AgentState) -> AgentState:
     state.setdefault("verification", {})
     state["todo_printed"] = False
     state["messages"].append("Plan created")
+
+    state["cycle_num"] += 1
     return state
 
 
@@ -102,6 +173,9 @@ def execute_step_node(state: AgentState) -> AgentState:
         print("\n" + "=" * 60)
         print("  TODO CHECKLIST (PLAN)")
         print("=" * 60)
+        print(f"  Decision: {plan.get('decision', 'N/A')}")
+        print(f"  Reasoning: {plan.get('reasoning', 'N/A')[:80]}...")
+        print()
         todo_out = [
             {
                 "id": s.get("id"),
@@ -128,7 +202,6 @@ def execute_step_node(state: AgentState) -> AgentState:
 
     # Certain actions should require approval in a real product (spend money)
     if action in ("campaign_setup", "adjustment"):
-        # For MVP: generate configs without pushing live changes.
         state["requires_approval"] = True
 
     # Dispatch to existing nodes via imports to avoid rewriting logic.
