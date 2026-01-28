@@ -1,13 +1,11 @@
 """Local persistence layer (filesystem-based).
 
-This repo originally used Supabase for persistence. For the demo flow we support
-"local-only" mode: all project/session/cycle state is stored on disk.
-
 Storage layout (default root: ./local_storage):
-- local_storage/index.json
-- local_storage/projects/<project_id>/project.json
-- local_storage/projects/<project_id>/sessions/<session_id>.json
-- local_storage/projects/<project_id>/cycles/<session_id>/<cycle_num>_<node>.json
+- local_storage/system.json                          # System-level config/prompts
+- local_storage/projects/<project_id>/index.json     # Project-level index
+- local_storage/projects/<project_id>/project.json   # Full project state
+- local_storage/projects/<project_id>/sessions/...
+- local_storage/projects/<project_id>/cycles/...
 
 The public interface of ProjectPersistence/SessionPersistence/CyclePersistence
 matches the previous Supabase-backed version.
@@ -15,18 +13,19 @@ matches the previous Supabase-backed version.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..local_storage import (
-    append_index_session,
+    append_session_to_project_index,
     ensure_dirs,
     generate_project_id,
     generate_session_id,
+    get_project_index,
+    list_projects,
     paths,
-    update_index_project,
+    update_project_index,
 )
 
 
@@ -76,7 +75,7 @@ class ProjectPersistence:
             "iteration": 0,
             "created_at": _utc_now_iso(),
             "updated_at": _utc_now_iso(),
-            # Flow fields (kept for compatibility)
+            # Flow fields
             "flow_status": "not_started",
             "last_completed_node": None,
             "completed_nodes": [],
@@ -84,7 +83,13 @@ class ProjectPersistence:
         }
 
         _write_json(p.project_json(project_id), project_data)
-        update_index_project(project_id, project_name, status={"flow_status": "not_started"})
+
+        # Update project-level index
+        update_project_index(project_id, status={
+            "flow_status": "not_started",
+            "project_name": project_name,
+        })
+
         return project_id
 
     @staticmethod
@@ -97,14 +102,15 @@ class ProjectPersistence:
         project_data["updated_at"] = _utc_now_iso()
         _write_json(p.project_json(project_id), project_data)
 
-        update_index_project(
+        # Update project-level index with status summary
+        update_project_index(
             project_id,
-            project_data.get("project_name", project_id),
             status={
                 "flow_status": project_data.get("flow_status"),
                 "current_phase": project_data.get("current_phase"),
                 "iteration": project_data.get("iteration"),
                 "last_completed_node": project_data.get("last_completed_node"),
+                "project_name": project_data.get("project_name", project_id),
             },
         )
 
@@ -149,16 +155,21 @@ class SessionPersistence:
         }
 
         _write_json(p.session_json(project_id, session_id), data)
-        append_index_session(project_id, session_id, session_num, uploaded_files=uploaded_files)
+
+        # Append to project-level index
+        append_session_to_project_index(
+            project_id,
+            session_id,
+            session_num,
+            uploaded_files=uploaded_files,
+        )
+
         return session_id
 
     @staticmethod
     def update_session(session_id: str, updates: Dict[str, Any]) -> None:
-        # We don't have a global session index by id; scan projects quickly via index.
-        from ..local_storage import _read_json as _idx_read  # type: ignore
-
-        idx = _idx_read(paths().index_path, {"projects": {}})
-        for project_id in (idx.get("projects") or {}).keys():
+        # Scan projects to find the session
+        for project_id in list_projects():
             p = paths().session_json(project_id, session_id)
             if p.exists():
                 sess = _read_json(p) or {}
@@ -216,12 +227,8 @@ class CyclePersistence:
 
     @staticmethod
     def get_session_cycles(session_id: str) -> List[Dict[str, Any]]:
-        # Best-effort: scan all project cycle dirs.
-        from ..local_storage import _read_json as _idx_read  # type: ignore
-
-        idx = _idx_read(paths().index_path, {"projects": {}})
         cycles: List[Dict[str, Any]] = []
-        for project_id in (idx.get("projects") or {}).keys():
+        for project_id in list_projects():
             cdir = paths().project_dir(project_id) / "cycles" / session_id
             if cdir.exists():
                 for f in sorted(cdir.glob("*.json")):
