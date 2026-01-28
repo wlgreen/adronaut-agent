@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 
 def test_watch_meta_emits_alerts_and_saves_snapshot(tmp_path, monkeypatch):
-    # Run in temp dir so snapshots/ is isolated
+    monkeypatch.setenv("ADRONAUT_HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
 
     # Create deployment result with guardrails
@@ -71,7 +71,7 @@ def test_watch_meta_emits_alerts_and_saves_snapshot(tmp_path, monkeypatch):
     code = cli.watch_meta_command(args)
     assert code == 0
 
-    snaps = sorted((tmp_path / "snapshots").glob("*.json"))
+    snaps = sorted((tmp_path / "projects" / "unknown" / "artifacts" / "snapshots").glob("*.json"))
     assert snaps, "expected a snapshot json to be created"
 
     snap = json.loads(snaps[-1].read_text())

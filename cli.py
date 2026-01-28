@@ -387,19 +387,26 @@ def print_execution_timeline(execution_plan):
 def save_output_artifacts(final_state, output_dir: Path) -> list[str]:
     """Save output artifacts to disk.
 
-    Creates:
-    - report.md: human-readable strategy summary
-    - campaign_config.json: the generated campaign config
-    - creative_prompts.json: creative prompts + ratings from artifacts
+    Output layout under output_dir:
+    - configs/campaign_config.json
+    - creatives/creative_prompts.json
+    - reports/report.md
 
     Returns list of saved file paths.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     saved = []
 
+    configs_dir = output_dir / "configs"
+    creatives_dir = output_dir / "creatives"
+    reports_dir = output_dir / "reports"
+    configs_dir.mkdir(parents=True, exist_ok=True)
+    creatives_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
     # 1) campaign_config.json
     if final_state.get("current_config"):
-        config_path = output_dir / "campaign_config.json"
+        config_path = configs_dir / "campaign_config.json"
         with open(config_path, "w") as f:
             json.dump(final_state["current_config"], f, indent=2)
         saved.append(str(config_path))
@@ -411,7 +418,7 @@ def save_output_artifacts(final_state, output_dir: Path) -> list[str]:
         if isinstance(artifact, dict) and ("creative" in artifact or "rating" in artifact):
             creatives[step_id] = artifact
     if creatives:
-        creatives_path = output_dir / "creative_prompts.json"
+        creatives_path = creatives_dir / "creative_prompts.json"
         with open(creatives_path, "w") as f:
             json.dump(creatives, f, indent=2)
         saved.append(str(creatives_path))
@@ -538,7 +545,7 @@ def save_output_artifacts(final_state, output_dir: Path) -> list[str]:
             report_lines.append(f"- ⚠ {e}")
         report_lines.append("")
 
-    report_path = output_dir / "report.md"
+    report_path = reports_dir / "report.md"
     report_path.write_text("\n".join(report_lines))
     saved.append(str(report_path))
 
@@ -632,7 +639,11 @@ def print_results(final_state):
 
     # Save config to file
     if final_state.get("current_config"):
-        filename = f"campaign_{final_state['project_id']}_v{final_state['iteration']}.json"
+        from src.storage.paths import project_artifact_kind_dir
+
+        configs_dir = project_artifact_kind_dir(final_state["project_id"], "configs")
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        filename = configs_dir / f"campaign_v{final_state['iteration']}.json"
         with open(filename, "w") as f:
             json.dump(final_state["current_config"], f, indent=2)
         print(f"\n✓ Configuration saved to: {filename}")
@@ -656,10 +667,15 @@ def run_command(args):
     # Get or create project (handles both UUID and name)
     project_id = get_or_create_project(args.project_id)
 
-    # Check if project has incomplete flow
-    if is_valid_uuid(args.project_id):
+    # Check if project has incomplete flow (DB mode only)
+    if os.environ.get("ADRONAUT_DISABLE_DB", "0") in ("1", "true", "True"):
+        project = None
+    elif is_valid_uuid(args.project_id):
         project = ProjectPersistence.load_project(args.project_id)
-        if project:
+    else:
+        project = None
+
+    if project:
             flow_status = project.get("flow_status", "not_started")
             last_completed = project.get("last_completed_node")
             completed_nodes = project.get("completed_nodes", [])
@@ -839,7 +855,9 @@ def run_command(args):
         print_results(final_state)
 
         # Save output artifacts
-        output_dir = Path("output") / project_id
+        from src.storage.paths import project_artifacts_dir
+
+        output_dir = project_artifacts_dir(project_id)
         saved_files = save_output_artifacts(final_state, output_dir)
         if saved_files:
             print("\n📁 Output artifacts saved:")
@@ -989,7 +1007,20 @@ def deploy_to_meta_command(args):
             },
         }
 
-        result_filename = config_path.stem + "_deployment_result.json"
+        from src.storage.paths import project_artifact_kind_dir
+
+        # Best-effort: infer project_id from config filename (campaign_<project_id>_vN.json)
+        project_id = "unknown"
+        stem = config_path.stem
+        if stem.startswith("campaign_"):
+            parts = stem.split("_v", 1)[0].split("campaign_", 1)
+            if len(parts) == 2 and parts[1]:
+                project_id = parts[1]
+
+        deployments_dir = project_artifact_kind_dir(project_id, "deployments")
+        deployments_dir.mkdir(parents=True, exist_ok=True)
+
+        result_filename = deployments_dir / (config_path.stem + "_deployment_result.json")
         with open(result_filename, 'w') as f:
             json.dump(result_out, f, indent=2)
         print(f"✓ Deployment result saved to: {result_filename}")
@@ -1201,7 +1232,18 @@ def watch_meta_command(args):
     )
 
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    snapshots_dir = Path("snapshots")
+    from src.storage.paths import project_artifact_kind_dir
+
+    project_id = "unknown"
+    # If provided a deployment result file, try to infer project_id from its filename
+    if args.deployment_result:
+        stem = Path(args.deployment_result).stem
+        if stem.startswith("campaign_"):
+            parts = stem.split("_v", 1)[0].split("campaign_", 1)
+            if len(parts) == 2 and parts[1]:
+                project_id = parts[1]
+
+    snapshots_dir = project_artifact_kind_dir(project_id, "snapshots")
     snapshots_dir.mkdir(parents=True, exist_ok=True)
     snap_path = snapshots_dir / f"{ts}.json"
 

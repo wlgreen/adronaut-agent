@@ -4,7 +4,7 @@ from src.agent.state import create_initial_state
 
 def test_track_node_logs_input_output(tmp_path, monkeypatch):
     monkeypatch.setenv("ADRONAUT_DISABLE_DB", "1")
-    monkeypatch.setenv("ADRONAUT_CHECKPOINT_DIR", str(tmp_path))
+    monkeypatch.setenv("ADRONAUT_HOME", str(tmp_path))
 
     state = create_initial_state(project_id="p1", uploaded_files=[], session_num=1)
     out = load_context_node(state)

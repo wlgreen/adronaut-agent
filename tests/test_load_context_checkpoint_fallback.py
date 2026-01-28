@@ -3,7 +3,7 @@ from src.agent.state import create_initial_state
 
 
 def test_load_context_falls_back_to_checkpoint(tmp_path, monkeypatch):
-    monkeypatch.setenv("ADRONAUT_CHECKPOINT_DIR", str(tmp_path))
+    monkeypatch.setenv("ADRONAUT_HOME", str(tmp_path))
     monkeypatch.setenv("ADRONAUT_DISABLE_DB", "1")
 
     from src.storage.local_checkpoint import save_full_state

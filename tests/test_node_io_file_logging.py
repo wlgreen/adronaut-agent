@@ -6,13 +6,13 @@ from src.agent.state import create_initial_state
 
 def test_node_io_written_under_project_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("ADRONAUT_DISABLE_DB", "1")
-    monkeypatch.setenv("ADRONAUT_CHECKPOINT_DIR", str(tmp_path))
+    monkeypatch.setenv("ADRONAUT_HOME", str(tmp_path))
 
     project_id = "p_file_log"
     state = create_initial_state(project_id=project_id, uploaded_files=[], session_num=1)
     load_context_node(state)
 
-    log_path = tmp_path / project_id / "node_io.jsonl"
+    log_path = tmp_path / "projects" / project_id / "logs" / "node_io.jsonl"
     assert log_path.exists()
 
     lines = log_path.read_text(encoding="utf-8").splitlines()

@@ -7,17 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-def _checkpoint_root() -> Path:
-    root = os.environ.get("ADRNAUT_CHECKPOINT_DIR") or os.environ.get("ADRONAUT_CHECKPOINT_DIR") or "checkpoints"
-    return Path(root)
-
-
-def project_dir(project_id: str) -> Path:
-    return _checkpoint_root() / project_id
+from .paths import project_logs_dir
 
 
 def node_io_log_path(project_id: str) -> Path:
-    return project_dir(project_id) / "node_io.jsonl"
+    return project_logs_dir(project_id) / "node_io.jsonl"
 
 
 def append_node_io_record(project_id: str, node_name: str, record: Dict[str, Any]) -> Optional[Path]:

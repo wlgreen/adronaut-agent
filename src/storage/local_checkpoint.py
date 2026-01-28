@@ -7,20 +7,17 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-def _checkpoint_root() -> Path:
-    # Default to repo-local ./checkpoints; allow override for tests/deployments.
-    root = os.environ.get("ADRNAUT_CHECKPOINT_DIR") or os.environ.get("ADRONAUT_CHECKPOINT_DIR") or "checkpoints"
-    return Path(root)
+from .paths import project_state_dir
 
 
 def checkpoint_path(project_id: str) -> Path:
-    """Legacy project_dict checkpoint path."""
-    return _checkpoint_root() / project_id / "state.json"
+    """Legacy project_dict checkpoint path (kept for backward compat)."""
+    return project_state_dir(project_id) / "state.json"
 
 
 def full_state_path(project_id: str) -> Path:
     """Full AgentState checkpoint path."""
-    return _checkpoint_root() / project_id / "state_full.json"
+    return project_state_dir(project_id) / "state_full.json"
 
 
 def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> Path:
