@@ -21,6 +21,16 @@ Built on:
 - **Supabase** (optional): can be disabled via `ADRONAUT_DISABLE_DB=1`
 - **Tavily** (optional): web search for benchmarks/competitive intelligence
 
+## Eval (local)
+
+Run the local E2E eval harness (offline, deterministic by default):
+
+```bash
+python3 scripts/eval_runner.py --scenarios tests/fixtures/eval --out tmp/eval_runs
+```
+
+Docs: `docs/EVAL.md`
+
 ## Setup
 
 ### 1. Prerequisites
