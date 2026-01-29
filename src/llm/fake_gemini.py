@@ -35,6 +35,36 @@ class FakeGeminiClient:
 
         # --- Agent orchestration ---
         if "planning" in tn:
+            # Heuristic: if the planner prompt indicates experiment results exist, run reflect/adjust flow.
+            p = (prompt or "")
+            if "Previous experiments:" in p:
+                try:
+                    num = int(p.split("Previous experiments:", 1)[1].split("\n", 1)[0].strip())
+                except Exception:
+                    num = 0
+            else:
+                num = 0
+
+            if num and num > 0 or "experiment_results" in p.lower() or "experiment results" in p.lower() or "week" in p.lower() and "results" in p.lower():
+                # ReflectionSkill forces a replan after it runs. If a latest reflection summary
+                # already exists in the prompt, skip reflection and proceed to adjustment.
+                has_latest_reflection = "LATEST REFLECTION (JSON, if available):\nnull" not in p
+
+                steps = [
+                    {"id": "s_adjust", "action": "adjustment", "rationale": "Generate safe patch config", "success": "current_config updated", "requires_approval": True},
+                    {"id": "s_save", "action": "save", "rationale": "Persist state", "success": "state saved", "requires_approval": False},
+                ]
+                if not has_latest_reflection:
+                    steps = [
+                        {"id": "s_reflect", "action": "reflection", "rationale": "Analyze experiment performance", "success": "latest_reflection summarized", "requires_approval": False},
+                    ] + steps
+
+                return {
+                    "decision": "reflect",
+                    "reasoning": "[eval] Deterministic reflect plan (experiment results present)",
+                    "steps": steps,
+                }
+
             return {
                 "decision": "initialize",
                 "reasoning": "[eval] Deterministic plan for offline evaluation",
@@ -180,6 +210,13 @@ class FakeGeminiClient:
                     "tiktok": {"bidding": {"target_cpa": 24.0}},
                 },
                 "risk_level": "low",
+            }
+
+        if "e2e judge" in tn:
+            return {
+                "scores": {"plan_quality": 4, "config_quality": 5, "grounding": 4, "guardrails": 4},
+                "overall": 4,
+                "notes": ["[eval] deterministic judge"],
             }
 
         if "product url extraction" in tn:

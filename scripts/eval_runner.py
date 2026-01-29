@@ -188,66 +188,152 @@ def _extract_created_project_id(stdout: str) -> Optional[str]:
     return None
 
 
-def run_agent_initialize(project_name: str, inputs_path: Path, adronaut_home: Path) -> AgentRunResult:
+def _base_env(adronaut_home: Path) -> Dict[str, str]:
     env = os.environ.copy()
-    env["ADRONAUT_HOME"] = str(adronaut_home)
+    env["ADRONAUT_HOME"] = str(adronaut_home.resolve())
     env["ADRONAUT_DISABLE_DB"] = "1"
     env["ADRONAUT_EVAL_MODE"] = "1"
     env["INTERACTIVE_MODE"] = "false"
-
-    # Ensure filesystem-backed DB is also sandboxed.
-    env["ADRONAUT_LOCAL_STORAGE_DIR"] = str(adronaut_home / "local_storage")
-
-    # Pre-approve so the agent completes the full flow (including campaign_setup)
-    # in a single run.  This mirrors a user who trusts the plan up-front.
+    # Ensure filesystem-backed DB is sandboxed too.
+    env["ADRONAUT_LOCAL_STORAGE_DIR"] = str((adronaut_home / "local_storage").resolve())
+    # Pre-approve so we can complete approval-gated steps in one shot.
     env["ADRONAUT_APPROVE"] = "1"
+    return env
 
-    rc1, out1, err1 = _run_cli(["run", "--project-id", project_name, "--inputs", str(inputs_path), "--approve"], env)
-    created_id = _extract_created_project_id(out1)
+
+def _load_campaign_config(adronaut_home: Path, project_id: str) -> Tuple[Optional[Dict[str, Any]], Path]:
+    cfg_path = adronaut_home / "projects" / project_id / "artifacts" / "configs" / "campaign_config.json"
+    if not cfg_path.exists():
+        return None, cfg_path
+    try:
+        return json.loads(cfg_path.read_text()), cfg_path
+    except Exception:
+        return None, cfg_path
+
+
+def _load_full_state(adronaut_home: Path, project_id: str) -> Optional[Dict[str, Any]]:
+    st_path = adronaut_home / "projects" / project_id / "state" / "state_full.json"
+    if not st_path.exists():
+        return None
+    try:
+        data = json.loads(st_path.read_text())
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def run_agent_initialize(project_name: str, inputs_path: Path, adronaut_home: Path) -> AgentRunResult:
+    env = _base_env(adronaut_home)
+
+    rc, out, err = _run_cli(["run", "--project-id", project_name, "--inputs", str(inputs_path), "--approve"], env)
+    created_id = _extract_created_project_id(out)
     effective_project_id = created_id or project_name
 
-    # (Second run disabled — single-run pre-approve is simpler and avoids the
-    #  resume-after-completed-flow edge case.)
-    rc2, out2, err2 = 0, "", ""
-
     gates: Dict[str, Any] = {
-        "cli_rc": rc1,
-        "cli_ok": rc1 == 0,
+        "cli_rc": rc,
+        "cli_ok": rc == 0,
+        "effective_project_id": effective_project_id,
     }
 
-    # Load saved config artifact.
-    cfg: Optional[Dict[str, Any]] = None
-    cfg_path = adronaut_home / "projects" / effective_project_id / "artifacts" / "configs" / "campaign_config.json"
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text())
-        except Exception:
-            cfg = None
-
+    cfg, cfg_path = _load_campaign_config(adronaut_home, effective_project_id)
     v = validate_campaign_config(cfg) if cfg is not None else _fail("CONFIG_MISSING", f"no campaign config artifact written at {cfg_path}")
     gates["config_valid"] = bool(v.get("ok"))
     gates["config_validation"] = v
 
-    # Even with pre-approve, approval gate should still fire (just auto-cleared).
-    gates["approval_gate_seen"] = ("approv" in (out1 + err1).lower())
+    st = _load_full_state(adronaut_home, effective_project_id)
+    gates["decision"] = (st or {}).get("decision")
+
+    # Even with pre-approve, approval text should appear somewhere.
+    gates["approval_gate_seen"] = ("approv" in (out + err).lower())
 
     ok = bool(gates["cli_ok"] and gates["config_valid"])
-    gates["effective_project_id"] = effective_project_id
 
-    return AgentRunResult(
-        ok=ok,
-        gates=gates,
-        artifacts={
-            "stdout": out1[-4000:],
-            "stderr": err1[-4000:],
-            "config": cfg,
-        },
-    )
+    return AgentRunResult(ok=ok, gates=gates, artifacts={"stdout": out[-4000:], "stderr": err[-4000:], "config": cfg, "state": st})
+
+
+def run_agent_reflect(project_id: str, inputs_path: Path, adronaut_home: Path) -> AgentRunResult:
+    """Run a reflect/adjust cycle by uploading experiment results to an existing project."""
+    env = _base_env(adronaut_home)
+
+    rc, out, err = _run_cli(["run", "--project-id", project_id, "--inputs", str(inputs_path), "--approve"], env)
+
+    gates: Dict[str, Any] = {
+        "cli_rc": rc,
+        "cli_ok": rc == 0,
+        "effective_project_id": project_id,
+    }
+
+    cfg, cfg_path = _load_campaign_config(adronaut_home, project_id)
+    v = validate_campaign_config(cfg) if cfg is not None else _fail("CONFIG_MISSING", f"no campaign config artifact written at {cfg_path}")
+    gates["config_valid"] = bool(v.get("ok"))
+    gates["config_validation"] = v
+
+    st = _load_full_state(adronaut_home, project_id)
+    gates["decision"] = (st or {}).get("decision")
+
+    ok = bool(gates["cli_ok"] and gates["config_valid"])
+
+    return AgentRunResult(ok=ok, gates=gates, artifacts={"stdout": out[-4000:], "stderr": err[-4000:], "config": cfg, "state": st})
 
 
 # ----------------------------
 # Scenario runner
 # ----------------------------
+
+
+def llm_judge_eval(*, scenario_id: str, phase: str, config: Dict[str, Any], guardrails: Dict[str, Any]) -> Dict[str, Any]:
+    """Optional LLM-as-judge scoring.
+
+    This uses a *real* Gemini call if GEMINI_API_KEY is set. Otherwise it's skipped.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        # Import direct client to bypass eval-mode fake.
+        from src.llm.gemini import GeminiClient
+        judge = GeminiClient()
+        judge_kind = "real"
+    else:
+        # Fall back to deterministic fake judge so eval output is always populated.
+        from src.llm.fake_gemini import FakeGeminiClient
+        judge = FakeGeminiClient()
+        judge_kind = "fake"
+
+    rubric = {
+        "plan_quality": "Coherent, testable, minimal fluff",
+        "config_quality": "Complete + sensible defaults (budget/placements/bidding)",
+        "grounding": "Avoids made-up numbers; aligns to inputs/guardrails",
+        "guardrails": "Suggested actions match alert severity",
+    }
+
+    prompt = (
+        f"You are judging end-to-end quality for an ads agent run.\n"
+        f"Scenario: {scenario_id} phase={phase}.\n\n"
+        f"Rubric (0-5 each): {json.dumps(rubric, indent=2)}\n\n"
+        f"Agent output campaign config JSON:\n{json.dumps(config, indent=2)[:12000]}\n\n"
+        f"Guardrails output JSON:\n{json.dumps(guardrails, indent=2)[:6000]}\n\n"
+        "Return STRICT JSON ONLY in this format:\n"
+        "{\n"
+        "  \"scores\": {\"plan_quality\": 0-5, \"config_quality\": 0-5, \"grounding\": 0-5, \"guardrails\": 0-5},\n"
+        "  \"overall\": 0-5,\n"
+        "  \"notes\": [\"...\"]\n"
+        "}"
+    )
+
+    try:
+        out = judge.generate_json(prompt=prompt, system_instruction=None, temperature=0.0, task_name="E2E Judge")
+    except Exception as e:
+        return {"ok": False, "error": str(e), "judge_kind": judge_kind}
+
+    scores = (out or {}).get("scores") or {}
+    try:
+        overall_0_5 = float((out or {}).get("overall", 0))
+    except Exception:
+        overall_0_5 = 0.0
+
+    # Convert to 0-100 for easier trending.
+    overall_0_100 = max(0.0, min(100.0, (overall_0_5 / 5.0) * 100.0))
+
+    return {"ok": True, "judge": out, "overall_0_100": round(overall_0_100, 2), "judge_kind": judge_kind}
 
 
 def run_scenario(scenario_dir: Path, out_root: Path) -> Dict[str, Any]:
@@ -262,24 +348,49 @@ def run_scenario(scenario_dir: Path, out_root: Path) -> Dict[str, Any]:
     adronaut_home.mkdir(parents=True, exist_ok=True)
 
     project_name = f"eval-{sid}"
-    inputs_path = scenario_dir / "historical_campaigns.csv"
-    if not inputs_path.exists():
+    historical_path = scenario_dir / "historical_campaigns.csv"
+    if not historical_path.exists():
         return {"scenario": sid, "ok": False, "error": "missing historical_campaigns.csv"}
 
-    agent_res = run_agent_initialize(project_name, inputs_path, adronaut_home)
+    init_res = run_agent_initialize(project_name, historical_path, adronaut_home)
+    project_id = init_res.gates.get("effective_project_id")
+
+    # Optional second phase: reflect/adjust if experiment_results.csv exists.
+    reflect_res: Optional[AgentRunResult] = None
+    exp_path = scenario_dir / "experiment_results.csv"
+    if project_id and exp_path.exists():
+        reflect_res = run_agent_reflect(str(project_id), exp_path, adronaut_home)
 
     guard_ok, guard_details = run_guardrail_eval(scenario_dir)
 
-    cfg = agent_res.artifacts.get("config") or {}
+    # Use latest config for scoring (reflect if present).
+    cfg = (reflect_res.artifacts.get("config") if reflect_res else init_res.artifacts.get("config")) or {}
+
+    # Quality score (heuristic)
     quality = score_quality(cfg, guardrail_ok=guard_ok)
 
-    gates = {
-        **agent_res.gates,
+    gates: Dict[str, Any] = {
+        "init": init_res.gates,
+        "reflect": reflect_res.gates if reflect_res else None,
         "guardrails_ok": guard_ok,
         "guardrails": guard_details,
     }
 
-    ok = bool(agent_res.ok and guard_ok)
+    # Extra gate: if reflect scenario, ensure decision was "reflect".
+    reflect_gate_ok = True
+    if reflect_res is not None:
+        reflect_gate_ok = (reflect_res.gates.get("decision") == "reflect")
+        gates["reflect_decision_ok"] = reflect_gate_ok
+
+    # LLM-as-judge (optional)
+    judge = llm_judge_eval(
+        scenario_id=sid,
+        phase=("reflect" if reflect_res is not None else "initialize"),
+        config=cfg,
+        guardrails=guard_details,
+    )
+
+    ok = bool(init_res.ok and (reflect_res.ok if reflect_res else True) and guard_ok and reflect_gate_ok)
 
     result = {
         "scenario": sid,
@@ -287,12 +398,15 @@ def run_scenario(scenario_dir: Path, out_root: Path) -> Dict[str, Any]:
         "ok": ok,
         "gates": gates,
         "quality_score": quality,
+        "judge": judge,
     }
 
-    # Persist detailed result
     (out_dir / "result.json").write_text(json.dumps(result, indent=2))
-    (out_dir / "stdout.txt").write_text(agent_res.artifacts.get("stdout", ""))
-    (out_dir / "stderr.txt").write_text(agent_res.artifacts.get("stderr", ""))
+    (out_dir / "stdout.txt").write_text(init_res.artifacts.get("stdout", ""))
+    (out_dir / "stderr.txt").write_text(init_res.artifacts.get("stderr", ""))
+    if reflect_res is not None:
+        (out_dir / "stdout_reflect.txt").write_text(reflect_res.artifacts.get("stdout", ""))
+        (out_dir / "stderr_reflect.txt").write_text(reflect_res.artifacts.get("stderr", ""))
 
     return result
 
