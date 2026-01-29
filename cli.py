@@ -1122,6 +1122,21 @@ def auto_watch_command(args):
     today_res = fetch_campaign_metrics(api, campaign_id, today_s, today_s)
     trailing_res = fetch_campaign_metrics(api, campaign_id, trailing_start, trailing_end)
 
+    # Optional: ad-level breakdowns for creative iteration (best-creative selection)
+    ad_breakdowns = None
+    try:
+        ad_map = dep.get('ad_creative_map') or []
+        if isinstance(ad_map, list) and ad_map:
+            from src.integrations.meta_monitor import AD_LEVEL_FIELDS
+            ads_today_res = fetch_campaign_metrics(api, campaign_id, today_s, today_s, fields=AD_LEVEL_FIELDS, level='ad', include_advantage_state=False)
+            ads_trailing_res = fetch_campaign_metrics(api, campaign_id, trailing_start, trailing_end, fields=AD_LEVEL_FIELDS, level='ad', include_advantage_state=False)
+            ad_breakdowns = {
+                'ads_today': ads_today_res.insights,
+                'ads_trailing_7d': ads_trailing_res.insights,
+            }
+    except Exception:
+        ad_breakdowns = None
+
     today_metrics = summarize_insights(today_res.insights)
     trailing_metrics = summarize_insights(trailing_res.insights)
 
@@ -1412,6 +1427,7 @@ def watch_meta_command(args):
         "trailing_7d": {"since": trailing_start, "until": trailing_end, **trailing_metrics},
         "guardrails": {"daily_cap": daily_cap, "target_cpa": target_cpa},
         "alerts": [a.__dict__ for a in alerts],
+        "breakdowns": ad_breakdowns,
     }
 
     snap_path.write_text(json.dumps(snapshot, indent=2))
@@ -1508,6 +1524,11 @@ def iterate_creatives_command(args):
     optimization_goal = (meta_cfg.get("optimization", {}) or {}).get("optimization_goal", optimization_goal)
 
     # Select a base Meta creative.
+    # Preference order:
+    # 1) If --snapshot provided and deployment has ad_creative_map, pick best-performing ad today.
+    # 2) Otherwise fall back to first Meta creative_asset in config.
+    # 3) Otherwise fall back to meta.creative_specs.
+
     base = {
         "angle": "(unknown)",
         "hypothesis": "(unknown)",
@@ -1520,18 +1541,94 @@ def iterate_creatives_command(args):
     creative_assets = config.get("creative_assets") or []
     meta_assets = [a for a in creative_assets if (a.get("platform") or "").lower() == "meta"]
 
-    if meta_assets:
-        # Pick the first asset as the base (MVP). Later: choose best by metrics.
-        ca = meta_assets[0]
-        cg = ca.get("creative_generation") or {}
+    chosen_asset = None
+
+    if getattr(args, "snapshot", None) and dep and dep.get("ad_creative_map"):
+        try:
+            snap = json.loads(Path(args.snapshot).read_text())
+            bd = (snap.get("breakdowns") or {})
+            ads_today = (bd.get("ads_today") or {}).get("data") or []
+
+            # Simple winner selection:
+            # - prefer lowest CPA among ads with conversions>0
+            # - else highest CTR among ads with impressions>=100
+            def _to_f(x):
+                try:
+                    return float(x)
+                except Exception:
+                    return None
+
+            def _conversions(row):
+                acts = row.get("actions") or []
+                total = 0.0
+                for a in acts:
+                    if not isinstance(a, dict):
+                        continue
+                    if a.get("action_type") in (
+                        "purchase",
+                        "offsite_conversion.purchase",
+                        "lead",
+                        "offsite_conversion.lead",
+                    ):
+                        v = _to_f(a.get("value"))
+                        if v is not None:
+                            total += v
+                return total
+
+            best_by_cpa = None
+            for r in ads_today:
+                spend = _to_f(r.get("spend")) or 0.0
+                conv = _conversions(r)
+                if conv and conv > 0 and spend >= 5.0:
+                    cpa = spend / conv
+                    if best_by_cpa is None or cpa < best_by_cpa[0]:
+                        best_by_cpa = (cpa, r)
+
+            chosen_row = best_by_cpa[1] if best_by_cpa else None
+            if chosen_row is None:
+                best_by_ctr = None
+                for r in ads_today:
+                    imp = _to_f(r.get("impressions")) or 0.0
+                    if imp < 100:
+                        continue
+                    ctr = _to_f(r.get("ctr"))
+                    if ctr is None:
+                        clk = _to_f(r.get("clicks")) or 0.0
+                        ctr = (clk / imp) * 100 if imp > 0 else None
+                    if ctr is not None:
+                        if best_by_ctr is None or ctr > best_by_ctr[0]:
+                            best_by_ctr = (ctr, r)
+                chosen_row = best_by_ctr[1] if best_by_ctr else None
+
+            if chosen_row:
+                best_ad_id = chosen_row.get("ad_id")
+
+                combo_id = None
+                for m in dep.get("ad_creative_map") or []:
+                    if m.get("ad_id") == best_ad_id:
+                        combo_id = m.get("combo_id")
+                        break
+
+                if combo_id:
+                    for a in meta_assets:
+                        if a.get("combo_id") == combo_id:
+                            chosen_asset = a
+                            break
+        except Exception:
+            chosen_asset = None
+
+    if chosen_asset is None and meta_assets:
+        chosen_asset = meta_assets[0]
+
+    if chosen_asset is not None:
+        cg = (chosen_asset.get("creative_generation") or {})
         base["visual_prompt"] = cg.get("visual_prompt", "")
         base["primary_text"] = cg.get("copy_primary_text", "")
         base["headline"] = cg.get("copy_headline", "")
         base["cta"] = cg.get("copy_cta", "SHOP_NOW")
-        base["angle"] = cg.get("messaging_angle", ca.get("creative_style") or "(unknown)")
+        base["angle"] = cg.get("messaging_angle", chosen_asset.get("creative_style") or "(unknown)")
         base["hypothesis"] = f"Iterate on {base['angle']} to improve CTR/CPA"
     else:
-        # Fall back to meta.creative_specs if no per-creative assets exist.
         specs = (meta_cfg.get("creative_specs") or {})
         base["headline"] = specs.get("headline", "")
         base["primary_text"] = specs.get("primary_text", "")

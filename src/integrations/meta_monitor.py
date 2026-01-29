@@ -23,6 +23,12 @@ DEFAULT_FIELDS = [
 ]
 
 
+AD_LEVEL_FIELDS = DEFAULT_FIELDS + [
+    'ad_id',
+    'ad_name',
+]
+
+
 @dataclass
 class MonitorResult:
     campaign_id: str
@@ -38,6 +44,7 @@ def fetch_campaign_metrics(
     date_start: str,
     date_end: str,
     fields: Optional[List[str]] = None,
+    level: Optional[str] = None,
     include_advantage_state: bool = True,
 ) -> MonitorResult:
     insights = api.get_campaign_insights(
@@ -45,6 +52,7 @@ def fetch_campaign_metrics(
         date_start=date_start,
         date_end=date_end,
         fields=fields or DEFAULT_FIELDS,
+        level=level,
     )
 
     status = None

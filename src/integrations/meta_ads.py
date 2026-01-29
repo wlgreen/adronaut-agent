@@ -761,7 +761,8 @@ class MetaAdsAPI:
         campaign_id: str,
         date_start: str,
         date_end: str,
-        fields: Optional[List[str]] = None
+        fields: Optional[List[str]] = None,
+        level: Optional[str] = None
     ) -> Dict:
         """
         Fetch campaign performance metrics
@@ -800,6 +801,9 @@ class MetaAdsAPI:
             ]
 
         params = f"?fields={','.join(fields)}&time_range={{'since':'{date_start}','until':'{date_end}'}}"
+
+        if level:
+            params += f"&level={level}"
 
         response = self._make_api_call(f"{endpoint}{params}", method="GET")
         return response
@@ -1020,6 +1024,8 @@ class MetaAdsAPI:
         # Step 3 & 4: Process creative assets
         creative_ids: List[str] = []
         ad_ids: List[str] = []
+        ad_creative_map: List[Dict[str, Any]] = []
+        creative_meta: List[Dict[str, Any]] = []
 
         creative_assets = config.get("creative_assets", [])
         if not self.page_id:
@@ -1079,6 +1085,14 @@ class MetaAdsAPI:
                     },
                 )
                 creative_ids.append(creative_id)
+                creative_meta.append(
+                    {
+                        "creative_id": creative_id,
+                        "combo_id": asset.get("combo_id"),
+                        "idx": idx,
+                        "name": f"Creative {idx+1} - {asset.get('combo_id', 'unknown')}",
+                    }
+                )
 
             # Step 5: Create ads for each creative
             for idx, creative_id in enumerate(creative_ids):
@@ -1091,6 +1105,18 @@ class MetaAdsAPI:
                     status="PAUSED",
                 )
                 ad_ids.append(ad_id)
+                combo_id = None
+                if idx < len(creative_meta):
+                    combo_id = creative_meta[idx].get("combo_id")
+                ad_creative_map.append(
+                    {
+                        "ad_id": ad_id,
+                        "creative_id": creative_id,
+                        "combo_id": combo_id,
+                        "name": f"Ad {idx+1}",
+                        "external_id": external_id,
+                    }
+                )
 
         print("\n✅ Campaign structure created successfully!")
         print(f"   Campaign ID: {campaign_id}")
@@ -1102,6 +1128,7 @@ class MetaAdsAPI:
             "ad_set_ids": [ad_set_id],
             "ad_ids": ad_ids,
             "creative_ids": creative_ids,
+            "ad_creative_map": ad_creative_map,
             "status": "PAUSED"
         }
 
