@@ -12,6 +12,7 @@ Complete reference for all Adronaut Agent CLI commands.
 | `deploy-to-meta` | Deploy config to Meta Ads | ✅ Yes (optional) |
 | `monitor-meta` | Fetch Meta campaign status + insights | ✅ Yes |
 | `watch-meta` | Guardrail monitoring (today vs trailing 7d), saves snapshots | ✅ Yes |
+| `iterate-creatives` | Generate 3 Meta IMAGE creative variants + experiment plan (saves lineage artifacts) | ❌ No (LLM only) |
 | `setup-cron` | Print crontab entry for hourly 9am-9pm watch-meta | ❌ No |
 | `export-manual-guide` | Generate manual setup checklist | ❌ No |
 
@@ -122,7 +123,26 @@ python cli.py watch-meta --deployment-result dep.json --daily-cap 75 --target-cp
 
 ---
 
-## 5. Setup Cron
+## 5. Iterate Creatives (Meta Image Ads)
+
+Generates **3 new Meta IMAGE creative variants** (refine / explore / format tweak) plus an **experiment plan**, and saves a **creative lineage** artifact.
+
+```bash
+python cli.py iterate-creatives --deployment-result campaign_<...>_deployment_result.json
+```
+
+Optionally link a watch-meta snapshot (for traceability):
+```bash
+python cli.py iterate-creatives --deployment-result dep.json --snapshot $ADRONAUT_HOME/projects/<project_id>/artifacts/snapshots/<timestamp>.json
+```
+
+### Output
+- `artifacts/creative_lineage/<timestamp>.json`
+- `artifacts/experiments/exp_<timestamp>.json`
+
+---
+
+## 6. Setup Cron
 
 Print a crontab entry for hourly monitoring (9am-9pm):
 
@@ -132,7 +152,7 @@ python cli.py setup-cron --deployment-result campaign_<...>_deployment_result.js
 
 ---
 
-## 6. Export Manual Guide
+## 7. Export Manual Guide
 
 ```bash
 python cli.py export-manual-guide --config-path <config-file.json>

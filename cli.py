@@ -1446,6 +1446,206 @@ def watch_meta_command(args):
     return 0
 
 
+def iterate_creatives_command(args):
+    """Generate 3 new Meta image creative variants + experiment plan and save lineage artifacts."""
+    from datetime import datetime
+
+    from src.modules.creative_iteration import generate_meta_image_variants, new_creative_id
+    from src.storage.local_checkpoint import load_full_state
+    from src.storage.paths import project_artifact_kind_dir
+
+    dep = None
+    config_path = None
+
+    if getattr(args, "deployment_result", None):
+        dep_path = Path(args.deployment_result)
+        if not dep_path.exists():
+            print(f"Error: deployment result not found: {dep_path}")
+            return 1
+        try:
+            dep = json.loads(dep_path.read_text())
+        except json.JSONDecodeError:
+            print(f"Error: invalid JSON in deployment result: {dep_path}")
+            return 1
+
+    if getattr(args, "config_path", None):
+        config_path = Path(args.config_path)
+    elif dep and dep.get("config_path"):
+        config_path = Path(dep.get("config_path"))
+
+    if not config_path:
+        print("Error: must provide --config-path or --deployment-result (with config_path inside)")
+        return 1
+    if not config_path.exists():
+        print(f"Error: config file not found: {config_path}")
+        return 1
+
+    try:
+        config = json.loads(config_path.read_text())
+    except json.JSONDecodeError:
+        print(f"Error: invalid JSON in config: {config_path}")
+        return 1
+
+    project_id = config.get("project_id") or (dep.get("project_id") if dep else None) or "unknown"
+
+    # Load richer context if we have it.
+    product_description = ""
+    brand_guidelines = ""
+    optimization_goal = "CONVERSIONS"
+
+    if project_id and project_id != "unknown":
+        st = load_full_state(project_id) or {}
+        user_inputs = st.get("user_inputs") or {}
+        product_description = user_inputs.get("product_description", "")
+        brand_guidelines = user_inputs.get("brand_guidelines", "")
+
+        strategy = st.get("strategy") or {}
+        creative_strategy = (strategy.get("creative_strategy") or {})
+        # best-effort: if strategy mentions an optimization goal
+        optimization_goal = creative_strategy.get("optimization_goal", optimization_goal)
+
+    meta_cfg = config.get("meta") or {}
+    optimization_goal = (meta_cfg.get("optimization", {}) or {}).get("optimization_goal", optimization_goal)
+
+    # Select a base Meta creative.
+    base = {
+        "angle": "(unknown)",
+        "hypothesis": "(unknown)",
+        "visual_prompt": "",
+        "primary_text": "",
+        "headline": "",
+        "cta": "SHOP_NOW",
+    }
+
+    creative_assets = config.get("creative_assets") or []
+    meta_assets = [a for a in creative_assets if (a.get("platform") or "").lower() == "meta"]
+
+    if meta_assets:
+        # Pick the first asset as the base (MVP). Later: choose best by metrics.
+        ca = meta_assets[0]
+        cg = ca.get("creative_generation") or {}
+        base["visual_prompt"] = cg.get("visual_prompt", "")
+        base["primary_text"] = cg.get("copy_primary_text", "")
+        base["headline"] = cg.get("copy_headline", "")
+        base["cta"] = cg.get("copy_cta", "SHOP_NOW")
+        base["angle"] = cg.get("messaging_angle", ca.get("creative_style") or "(unknown)")
+        base["hypothesis"] = f"Iterate on {base['angle']} to improve CTR/CPA"
+    else:
+        # Fall back to meta.creative_specs if no per-creative assets exist.
+        specs = (meta_cfg.get("creative_specs") or {})
+        base["headline"] = specs.get("headline", "")
+        base["primary_text"] = specs.get("primary_text", "")
+        base["cta"] = specs.get("call_to_action", "SHOP_NOW")
+        base["visual_prompt"] = specs.get("visual_prompt", "")
+
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    # Generate variants + experiment plan.
+    gen = generate_meta_image_variants(
+        product_description=product_description,
+        brand_guidelines=brand_guidelines,
+        optimization_goal=optimization_goal,
+        base=base,
+    )
+
+    base_id = new_creative_id()
+    lineage = []
+
+    # Base node
+    lineage.append(
+        {
+            "creative_id": base_id,
+            "parent_creative_id": None,
+            "source": "uploaded" if meta_assets else "config",
+            "angle": base.get("angle"),
+            "hypothesis": base.get("hypothesis"),
+            "assets": {
+                "visual_prompt": base.get("visual_prompt"),
+                "headline": base.get("headline"),
+                "primary_text": base.get("primary_text"),
+                "cta": base.get("cta"),
+            },
+            "metrics_ref": args.snapshot,
+        }
+    )
+
+    variants_out = []
+    for v in gen.get("variants", []):
+        vid = new_creative_id()
+        variants_out.append({
+            "creative_id": vid,
+            "kind": v.get("kind"),
+            "angle": v.get("angle"),
+            "hypothesis": v.get("hypothesis"),
+            "assets": {
+                "visual_prompt": v.get("visual_prompt"),
+                "headline": v.get("headline"),
+                "primary_text": v.get("primary_text"),
+                "cta": v.get("cta"),
+            },
+        })
+        lineage.append(
+            {
+                "creative_id": vid,
+                "parent_creative_id": base_id,
+                "source": "generated",
+                "angle": v.get("angle"),
+                "hypothesis": v.get("hypothesis"),
+                "assets": {
+                    "visual_prompt": v.get("visual_prompt"),
+                    "headline": v.get("headline"),
+                    "primary_text": v.get("primary_text"),
+                    "cta": v.get("cta"),
+                },
+                "metrics_ref": args.snapshot,
+            }
+        )
+
+    experiment = gen.get("experiment") or {}
+
+    # Save artifacts
+    lineage_dir = project_artifact_kind_dir(project_id, "creative_lineage")
+    exp_dir = project_artifact_kind_dir(project_id, "experiments")
+    lineage_dir.mkdir(parents=True, exist_ok=True)
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    lineage_path = lineage_dir / f"{ts}.json"
+    exp_path = exp_dir / f"exp_{ts}.json"
+
+    lineage_payload = {
+        "timestamp": ts,
+        "project_id": project_id,
+        "config_path": str(config_path),
+        "snapshot_ref": args.snapshot,
+        "nodes": lineage,
+    }
+    lineage_path.write_text(json.dumps(lineage_payload, indent=2))
+
+    exp_payload = {
+        "timestamp": ts,
+        "project_id": project_id,
+        "objective": optimization_goal,
+        "base_creative_id": base_id,
+        "variants": variants_out,
+        "experiment": experiment,
+    }
+    exp_path.write_text(json.dumps(exp_payload, indent=2))
+
+    print("=" * 60)
+    print("  Meta Creative Iteration (Image Ads)")
+    print("=" * 60)
+    print(f"Project: {project_id}")
+    print(f"Base creative: {base_id}")
+    print(f"✓ Lineage saved: {lineage_path}")
+    print(f"✓ Experiment saved: {exp_path}")
+    print()
+
+    for v in variants_out:
+        print(f"- {v['kind']}: {v['assets'].get('headline','(no headline)')} | angle={v.get('angle')}")
+
+    return 0
+
+
 def setup_cron_command(args):
     """Print a crontab entry for hourly monitoring 9am-9pm."""
     repo_path = Path(args.repo_path or Path(__file__).resolve().parent)
@@ -2205,6 +2405,24 @@ def main():
         help="Log what would be queried (no API calls)"
     )
 
+    # Iterate Meta creatives (image ads) command
+    iterate_parser = subparsers.add_parser(
+        "iterate-creatives",
+        help="Generate 3 new Meta IMAGE creative variants + experiment plan and save lineage artifacts"
+    )
+    iterate_parser.add_argument(
+        "--config-path",
+        help="Path to campaign config JSON (campaign_<project>_vN.json). If omitted, uses --deployment-result."
+    )
+    iterate_parser.add_argument(
+        "--deployment-result",
+        help="Path to *_deployment_result.json (used to locate config_path + project_id)"
+    )
+    iterate_parser.add_argument(
+        "--snapshot",
+        help="Optional path to a watch-meta snapshot to link as the trigger context"
+    )
+
     # Cron setup helper
     cron_parser = subparsers.add_parser(
         "setup-cron",
@@ -2255,6 +2473,8 @@ def main():
         return monitor_meta_command(args)
     elif args.command == "watch-meta":
         return watch_meta_command(args)
+    elif args.command == "iterate-creatives":
+        return iterate_creatives_command(args)
     elif args.command == "status":
         from src.storage.local_checkpoint import load_full_state
         from src.storage.status import project_status_summary
