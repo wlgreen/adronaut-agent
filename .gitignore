@@ -26,3 +26,4 @@ campaign_*.json
 snapshots/
 local_storage/
 output/
+tmp/

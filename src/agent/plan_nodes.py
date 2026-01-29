@@ -306,11 +306,19 @@ def execute_step_node(state: AgentState) -> AgentState:
 
     # Hard approval gate: do not execute until approved.
     if state.get("requires_approval") and state.get("approval_status") != "approved":
-        state["approval_status"] = "pending"
-        state.setdefault("messages", []).append(
-            f"Approval required for action '{action}'. Re-run with ADRONAUT_APPROVE=1 to approve and continue."
-        )
-        return state
+        # Check if the user pre-approved via environment variable.
+        import os
+        if os.environ.get("ADRONAUT_APPROVE") in ("1", "true", "True", "YES", "yes"):
+            state["approval_status"] = "approved"
+            state.setdefault("messages", []).append(
+                f"Approval auto-granted via ADRONAUT_APPROVE for action '{action}'."
+            )
+        else:
+            state["approval_status"] = "pending"
+            state.setdefault("messages", []).append(
+                f"Approval required for action '{action}'. Re-run with ADRONAUT_APPROVE=1 to approve and continue."
+            )
+            return state
 
     state = skill.run(state)
     return state

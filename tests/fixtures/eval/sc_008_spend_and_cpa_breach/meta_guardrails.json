@@ -1,0 +1,26 @@
+{
+  "campaign_id": "cmp_008",
+  "daily_cap": 30.0,
+  "target_cpa": 20.0,
+  "today_insights": {
+    "data": [
+      {
+        "spend": "55.00",
+        "impressions": "8000",
+        "clicks": "200",
+        "actions": [{"action_type": "purchase", "value": "1"}]
+      }
+    ]
+  },
+  "trailing_7d_insights": {
+    "data": [
+      {
+        "spend": "200.00",
+        "impressions": "60000",
+        "clicks": "1500",
+        "actions": [{"action_type": "purchase", "value": "12"}]
+      }
+    ]
+  },
+  "expected_codes": ["SPEND_CAP", "CPA_HIGH"]
+}

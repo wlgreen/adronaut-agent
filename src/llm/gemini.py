@@ -504,13 +504,21 @@ _gemini_client: Optional[GeminiClient] = None
 
 
 def get_gemini() -> GeminiClient:
-    """
-    Get or create Gemini client singleton
+    """Get or create Gemini client singleton.
+
+    Local/offline evaluation mode:
+    - If `ADRONAUT_EVAL_MODE=1` or `ADRONAUT_FAKE_LLM=1`, returns a deterministic fake.
 
     Returns:
-        GeminiClient instance
+        GeminiClient-compatible instance
     """
     global _gemini_client
+
+    if os.getenv("ADRONAUT_EVAL_MODE") == "1" or os.getenv("ADRONAUT_FAKE_LLM") == "1":
+        # Avoid storing on the global singleton to reduce cross-test coupling.
+        from .fake_gemini import FakeGeminiClient
+        return FakeGeminiClient()  # type: ignore[return-value]
+
     if _gemini_client is None:
         _gemini_client = GeminiClient()
     return _gemini_client

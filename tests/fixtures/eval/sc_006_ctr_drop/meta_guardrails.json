@@ -1,0 +1,26 @@
+{
+  "campaign_id": "cmp_006",
+  "daily_cap": 200.0,
+  "target_cpa": 25.0,
+  "today_insights": {
+    "data": [
+      {
+        "spend": "45.00",
+        "impressions": "15000",
+        "clicks": "150",
+        "actions": [{"action_type": "purchase", "value": "3"}]
+      }
+    ]
+  },
+  "trailing_7d_insights": {
+    "data": [
+      {
+        "spend": "350.00",
+        "impressions": "100000",
+        "clicks": "2500",
+        "actions": [{"action_type": "purchase", "value": "21"}]
+      }
+    ]
+  },
+  "expected_codes": ["CTR_DROP"]
+}
