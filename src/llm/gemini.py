@@ -509,16 +509,26 @@ def get_gemini() -> GeminiClient:
     Local/offline evaluation mode:
     - If `ADRONAUT_EVAL_MODE=1` or `ADRONAUT_FAKE_LLM=1`, returns a deterministic fake.
 
+    Record/replay (works for both fake + real):
+    - ADRONAUT_LLM_REPLAY_PATH: replay responses from a JSONL trace
+    - ADRONAUT_LLM_RECORD_PATH: append every call + response to a JSONL trace
+
     Returns:
         GeminiClient-compatible instance
     """
     global _gemini_client
 
+    # Choose base client
     if os.getenv("ADRONAUT_EVAL_MODE") == "1" or os.getenv("ADRONAUT_FAKE_LLM") == "1":
         # Avoid storing on the global singleton to reduce cross-test coupling.
         from .fake_gemini import FakeGeminiClient
-        return FakeGeminiClient()  # type: ignore[return-value]
+        base = FakeGeminiClient()  # type: ignore[assignment]
+    else:
+        if _gemini_client is None:
+            _gemini_client = GeminiClient()
+        base = _gemini_client
 
-    if _gemini_client is None:
-        _gemini_client = GeminiClient()
-    return _gemini_client
+    # Optional record/replay wrappers
+    from .recording import maybe_wrap_record_replay
+
+    return maybe_wrap_record_replay(base)  # type: ignore[return-value]

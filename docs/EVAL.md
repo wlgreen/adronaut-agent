@@ -67,6 +67,40 @@ Why deterministic mode exists:
 
 ---
 
+## Record / Replay (recommended for real-model eval)
+
+When you start using real models, reproducibility becomes the main pain.
+This repo supports a lightweight record/replay mechanism for LLM calls.
+
+### Record
+
+Set `ADRONAUT_LLM_RECORD_PATH` to a JSONL file.
+Every LLM call (`generate_json`/`generate_text`) will append a record with:
+- `task_name`, `temperature`, `system_instruction`, `prompt`
+- `response`
+- a stable `key` (hash) used for replay
+
+Example:
+
+```bash
+export ADRONAUT_LLM_RECORD_PATH=tmp/llm_traces/sc_001.jsonl
+python3 scripts/eval_runner.py --scenarios tests/fixtures/eval --out tmp/eval_runs
+```
+
+### Replay
+
+Set `ADRONAUT_LLM_REPLAY_PATH` to a previously recorded JSONL trace.
+The model will not be called; responses are returned from the trace.
+
+```bash
+export ADRONAUT_LLM_REPLAY_PATH=tmp/llm_traces/sc_001.jsonl
+python3 scripts/eval_runner.py --scenarios tests/fixtures/eval --out tmp/eval_runs
+```
+
+Notes:
+- Replay matches calls by a stable hash of `(kind, task_name, system_instruction, prompt)`.
+- You can enable both replay + record at once (record will capture replayed outputs).
+
 ## LLM-as-judge
 
 The harness includes an optional **judge step** for scoring qualities that are hard to validate mechanically.
