@@ -177,40 +177,212 @@ class FakeGeminiClient:
 
             return {
                 "tiktok": {
-                    "campaign_name": "[eval] tiktok_campaign",
+                    "campaign_name": "[eval][DTC][PURCHASE] TikTok Prospecting",
                     "objective": "CONVERSIONS",
                     "daily_budget": 60.0,
                     "targeting": {
-                        "age_range": "25-44",
+                        "age_range": "18-54",
                         "gender": "all",
                         "locations": ["US"],
-                        "interests": ["online shopping"],
+                        "interests": [],
                         "behaviors": ["engaged shoppers"],
                     },
                     "placements": ["TikTok"],
-                    "bidding": {"strategy": "LOWEST_COST_WITH_BID_CAP", "bid_amount": 0.0, "target_cpa": target_cpa},
-                    "creative_specs": {"format": "video", "duration": "9-15s", "messaging": ["[eval] one clear benefit"]},
-                    "optimization": {"optimization_goal": "CONVERSIONS", "attribution_window": "7_DAY_CLICK"},
+                    "creative_specs": {
+                        "format": "video",
+                        "duration": "9-15s",
+                        "messaging": [
+                            "Problem→Solution: what it fixes + how",
+                            "Proof: reviews/results before/after",
+                            "Offer: incentive + guarantee + shipping clarity",
+                        ],
+                    },
+                    "optimization": {
+                        "optimization_goal": "CONVERSIONS",
+                        "attribution_window": "7_DAY_CLICK",
+                        "conversion_event": "Purchase",
+                    },
+                    "bidding": {
+                        "strategy": "LOWEST_COST_WITH_BID_CAP",
+                        "bid_amount": 0.0,
+                        "target_cpa": target_cpa,
+                    },
+                    "funnel": {
+                        "prospecting": {
+                            "budget_share": 0.85,
+                            "ad_groups": [
+                                {
+                                    "name": "P1_Broad_18-54",
+                                    "daily_budget": 30.0,
+                                    "targeting": {"age_range": "18-54", "gender": "all", "locations": ["US"], "interests": [], "behaviors": ["engaged shoppers"]},
+                                    "placements": ["TikTok"],
+                                },
+                                {
+                                    "name": "P2_Interest_Stack",
+                                    "daily_budget": 15.0,
+                                    "targeting": {"age_range": "25-44", "gender": "all", "locations": ["US"], "interests": ["online shopping", "wellness", "fitness"], "behaviors": ["engaged shoppers"]},
+                                    "placements": ["TikTok"],
+                                },
+                                {
+                                    "name": "P3_Test_Hook_Variants",
+                                    "daily_budget": 6.0,
+                                    "targeting": {"age_range": "25-44", "gender": "all", "locations": ["US"], "interests": [], "behaviors": ["engaged shoppers"]},
+                                    "placements": ["TikTok"],
+                                }
+                            ],
+                        },
+                        "retargeting": {
+                            "budget_share": 0.15,
+                            "ad_groups": [
+                                {
+                                    "name": "R1_7D_ViewContent_ATC",
+                                    "daily_budget": 9.0,
+                                    "audiences": ["7D ViewContent", "7D AddToCart"],
+                                    "exclusions": ["180D Purchasers"],
+                                    "placements": ["TikTok"],
+                                }
+                            ],
+                        },
+                    },
+                    "creative_plan": {
+                        "formats": ["UGC_video_9-15s", "UGC_video_20-30s"],
+                        "required_angles": [
+                            "Problem→Solution",
+                            "Before/After",
+                            "Social Proof/Testimonial",
+                            "Offer + Urgency",
+                            "Objection handler (shipping/price/quality)",
+                        ],
+                        "hooks": [
+                            "Stop doing X…",
+                            "If you struggle with X, try this…",
+                            "I tried this for 7 days—here’s what happened",
+                        ],
+                        "cta": "SHOP_NOW",
+                    },
+                    "tracking": {
+                        "utm_template": "utm_source=tiktok&utm_medium=paid_social&utm_campaign={{campaign_name}}&utm_content={{ad_name}}",
+                        "naming": {
+                            "campaign": "[DTC][PURCHASE][TT] {{funnel}} | {{angle}}",
+                            "ad_group": "{{audience}} | {{placement}}",
+                            "ad": "{{hook}} | {{creator}} | v{{version}}",
+                        },
+                    },
                 },
                 "meta": {
-                    "campaign_name": "[eval] meta_campaign",
+                    "campaign_name": "[eval][DTC][PURCHASE] Meta Prospecting",
                     "objective": "CONVERSIONS",
                     "daily_budget": 40.0,
                     "targeting": {
-                        "age_range": "25-44",
+                        "age_range": "18-54",
                         "gender": "all",
                         "locations": ["US"],
-                        "detailed_targeting": {"interests": ["fitness"], "behaviors": ["engaged shoppers"]},
+                        "detailed_targeting": {"interests": [], "behaviors": ["engaged_shoppers"]},
                     },
-                    "placements": ["facebook", "instagram"],
-                    "bidding": {"strategy": "LOWEST_COST_WITH_BID_CAP", "bid_amount": 0.0, "target_cpa": target_cpa},
-                    "creative_specs": {"formats": ["image", "video"], "messaging": ["[eval] simple value prop"]},
-                    "optimization": {"optimization_goal": "CONVERSIONS", "conversion_window": "7_DAY_CLICK"},
+                    "placements": ["advantage_plus"],
+                    "creative_specs": {
+                        "formats": ["reels_9x16", "feed_1x1", "carousel"],
+                        "messaging": [
+                            "Hook → benefit → proof → offer → CTA",
+                            "UGC testimonial + social proof",
+                            "Offer + guarantee + shipping clarity",
+                        ],
+                    },
+                    "optimization": {
+                        "optimization_goal": "CONVERSIONS",
+                        "conversion_window": "7_DAY_CLICK",
+                        "conversion_event": "Purchase",
+                        "attribution": {"click": "7d", "view": "1d"},
+                    },
+                    "bidding": {
+                        "strategy": "LOWEST_COST_WITH_BID_CAP",
+                        "bid_amount": 0.0,
+                        "target_cpa": target_cpa,
+                    },
+                    "funnel": {
+                        "prospecting": {
+                            "budget_share": 0.8,
+                            "ad_sets": [
+                                {
+                                    "name": "P1_Broad_Advantage+",
+                                    "daily_budget": 20.0,
+                                    "targeting": {
+                                        "age_range": "18-54",
+                                        "gender": "all",
+                                        "locations": ["US"],
+                                        "detailed_targeting": {"interests": [], "behaviors": ["engaged_shoppers"]},
+                                    },
+                                },
+                                {
+                                    "name": "P2_Interest_Stack",
+                                    "daily_budget": 8.0,
+                                    "targeting": {
+                                        "age_range": "25-44",
+                                        "gender": "all",
+                                        "locations": ["US"],
+                                        "detailed_targeting": {"interests": ["fitness", "wellness"], "behaviors": ["engaged_shoppers"]},
+                                    },
+                                },
+                                {
+                                    "name": "P3_Creative_Test_Cell",
+                                    "daily_budget": 4.0,
+                                    "targeting": {
+                                        "age_range": "18-54",
+                                        "gender": "all",
+                                        "locations": ["US"],
+                                        "detailed_targeting": {"interests": [], "behaviors": ["engaged_shoppers"]},
+                                    },
+                                }
+                            ],
+                        },
+                        "retargeting": {
+                            "budget_share": 0.2,
+                            "ad_sets": [
+                                {
+                                    "name": "R1_7D_ATC",
+                                    "daily_budget": 5.0,
+                                    "custom_audiences": ["7D AddToCart"],
+                                    "exclude_audiences": ["180D Purchasers"],
+                                },
+                                {
+                                    "name": "R2_14D_ViewContent_IG_Engagers",
+                                    "daily_budget": 3.0,
+                                    "custom_audiences": ["14D ViewContent", "14D IG Engagers"],
+                                    "exclude_audiences": ["180D Purchasers"],
+                                }
+                            ],
+                        },
+                    },
+                    "creative_plan": {
+                        "formats": ["reels_9x16", "feed_1x1", "carousel"],
+                        "required_angles": [
+                            "Problem→Solution",
+                            "Proof (UGC + results)",
+                            "Offer + guarantee",
+                            "Competitor comparison",
+                            "Objection handler",
+                        ],
+                        "primary_text_templates": [
+                            "Hook → benefit → proof → CTA",
+                            "Question hook → empathy → solution → CTA",
+                        ],
+                        "cta": "SHOP_NOW",
+                    },
+                    "tracking": {
+                        "utm_template": "utm_source=meta&utm_medium=paid_social&utm_campaign={{campaign_name}}&utm_content={{ad_name}}",
+                        "events_required": ["ViewContent", "AddToCart", "InitiateCheckout", "Purchase"],
+                        "notes": "Ensure Pixel + CAPI are enabled before scaling.",
+                    },
                 },
                 "summary": {
                     "total_daily_budget": 100.0,
                     "budget_allocation": {"tiktok": 60.0, "meta": 40.0},
-                    "experiment": "[eval] Test audience x creative messaging",
+                    "experiment": "[DTC] 2-week creative angle test (5 angles) with prospecting+retargeting split",
+                    "success_metrics": {
+                        "primary": "CPA (Purchase)",
+                        "secondary": ["CTR", "CVR", "AOV", "MER"],
+                        "stop_rules": ["If CPA > 1.5x target for 2 days → pause worst ad", "If CTR drops >20% vs 7d avg → refresh creatives"],
+                    },
                 },
             }
 
