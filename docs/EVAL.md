@@ -110,7 +110,8 @@ The harness includes an optional **judge step** for scoring qualities that are h
 You can choose the judge provider via env:
 
 - `ADRONAUT_JUDGE_PROVIDER=codex` (recommended)
-  - Uses OpenAI Responses API with `ADRONAUT_JUDGE_MODEL` (default: `gpt-5.2`).
+  - Uses OpenAI **Responses API** with `ADRONAUT_JUDGE_MODEL` (default: `gpt-5.2`).
+  - Forces strict JSON via `response_format: {"type": "json_object"}`.
   - Requires `OPENAI_API_KEY`.
 
 - Default behavior (if `ADRONAUT_JUDGE_PROVIDER` not set):
@@ -121,13 +122,22 @@ This means `result.json` / `results.jsonl` always contains a `judge` field.
 
 ### Judge usage (Codex / gpt-5.2)
 
+This repo supports using **Codex (OpenAI) as the judge** while keeping **Gemini as the generator**.
+
 ```bash
+# Generator (agent)
+export GEMINI_API_KEY=...
+
+# Judge
 export ADRONAUT_JUDGE_PROVIDER=codex
 export ADRONAUT_JUDGE_MODEL=gpt-5.2
 export OPENAI_API_KEY=...
 
 python3 scripts/eval_runner.py --scenarios tests/fixtures/eval --out tmp/eval_runs
 ```
+
+Implementation note: the judge uses the OpenAI **Responses API** and requests `response_format=json_object`
+so the judge output is strict JSON.
 
 ### Judge rubric (v1)
 
