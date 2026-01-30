@@ -140,7 +140,18 @@ Per scenario, we currently gate on:
 - CLI exit code == 0
 - A config artifact exists and is schema-valid (light schema in eval runner)
 - Guardrails expectations match (if fixture present)
-- If `experiment_results.csv` exists: reflect phase decision must equal `"reflect"`
+- If `experiment_results.csv` exists:
+  - reflect phase decision must equal `"reflect"`
+  - **reflect diff-gate**: config changes should match the performance signal
+
+### Reflect diff-gate (high ROI)
+
+When `experiment_results.csv` exists, the harness computes a blended CPA:
+
+- If `exp_cpa > 1.2 * target_cpa` → **require** the config to change a key knob (v1: bidding `target_cpa`).
+- If `exp_cpa <= target_cpa` → **require** no churn (v1: bidding `target_cpa` should not change).
+
+This catches the common failure mode where the agent "sounds right" but doesn’t actually change the config appropriately.
 
 ---
 
