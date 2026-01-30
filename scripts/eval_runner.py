@@ -118,6 +118,127 @@ def score_quality(cfg: Dict[str, Any], guardrail_ok: bool) -> float:
     return float(round(score, 2))
 
 
+def _read_csv_rows(path: Path) -> List[Dict[str, Any]]:
+    import csv
+
+    rows: List[Dict[str, Any]] = []
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            rows.append({k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in r.items()})
+    return rows
+
+
+def _to_float(x: Any) -> Optional[float]:
+    try:
+        if x is None:
+            return None
+        if isinstance(x, str) and x.strip() == "":
+            return None
+        return float(x)
+    except Exception:
+        return None
+
+
+def compute_experiment_cpa(experiment_results_csv: Path) -> Optional[float]:
+    """Compute blended CPA from experiment_results.csv if possible."""
+    try:
+        rows = _read_csv_rows(experiment_results_csv)
+    except Exception:
+        return None
+
+    spend = 0.0
+    conv = 0.0
+
+    for r in rows:
+        # Accept common column variants
+        s = _to_float(r.get("spend") or r.get("Spend") or r.get("SPEND"))
+        c = _to_float(r.get("conversions") or r.get("Conversions") or r.get("conv") or r.get("CONVERSIONS"))
+        if s is not None:
+            spend += s
+        if c is not None:
+            conv += c
+
+    if conv <= 0:
+        return None
+    return spend / conv
+
+
+def diff_gate_reflect_adjust(
+    *,
+    scenario_dir: Path,
+    init_cfg: Optional[Dict[str, Any]],
+    reflect_cfg: Optional[Dict[str, Any]],
+    guardrails_payload: Dict[str, Any],
+) -> Tuple[bool, Dict[str, Any]]:
+    """High-ROI gate: ensure reflect/adjust causes the *right kind* of config change.
+
+    v1 policy:
+    - If blended experiment CPA > 1.2 * target_cpa => require target_cpa to change in config.
+    - If CPA <= target_cpa => require target_cpa to stay the same (avoid needless churn).
+
+    We intentionally start narrow (target_cpa) because it's measurable and central.
+    """
+    exp_path = scenario_dir / "experiment_results.csv"
+    if not exp_path.exists() or reflect_cfg is None or init_cfg is None:
+        return True, {"ok": True, "skipped": True}
+
+    target_cpa = guardrails_payload.get("target_cpa") if isinstance(guardrails_payload, dict) else None
+    if target_cpa is None:
+        target_cpa = 25.0
+
+    exp_cpa = compute_experiment_cpa(exp_path)
+    if exp_cpa is None:
+        # Not enough info; don't gate yet.
+        return True, {"ok": True, "skipped": True, "reason": "could not compute experiment CPA"}
+
+    def get_target(cfg: Dict[str, Any], platform: str) -> Optional[float]:
+        try:
+            return _to_float(((cfg.get(platform) or {}).get("bidding") or {}).get("target_cpa"))
+        except Exception:
+            return None
+
+    init_meta = get_target(init_cfg, "meta")
+    init_tt = get_target(init_cfg, "tiktok")
+    ref_meta = get_target(reflect_cfg, "meta")
+    ref_tt = get_target(reflect_cfg, "tiktok")
+
+    # Also ensure objective doesn't flip unexpectedly.
+    init_obj = ((init_cfg.get("meta") or {}).get("objective"))
+    ref_obj = ((reflect_cfg.get("meta") or {}).get("objective"))
+    objective_ok = (init_obj == ref_obj)
+
+    # Change detection.
+    changed = (init_meta != ref_meta) or (init_tt != ref_tt)
+
+    needs_change = exp_cpa > 1.2 * float(target_cpa)
+
+    ok = True
+    notes: List[str] = []
+
+    if not objective_ok:
+        ok = False
+        notes.append(f"Objective changed unexpectedly: {init_obj} -> {ref_obj}")
+
+    if needs_change and not changed:
+        ok = False
+        notes.append(f"High CPA (${exp_cpa:.2f} > 1.2*${float(target_cpa):.2f}) but target_cpa did not change")
+
+    if not needs_change and changed:
+        ok = False
+        notes.append(f"CPA ok (${exp_cpa:.2f} <= ${float(target_cpa):.2f}) but target_cpa changed (unnecessary churn)")
+
+    return ok, {
+        "ok": ok,
+        "exp_cpa": exp_cpa,
+        "target_cpa": float(target_cpa),
+        "needs_change": needs_change,
+        "init": {"meta_target_cpa": init_meta, "tiktok_target_cpa": init_tt, "meta_objective": init_obj},
+        "reflect": {"meta_target_cpa": ref_meta, "tiktok_target_cpa": ref_tt, "meta_objective": ref_obj},
+        "notes": notes,
+    }
+
+
 # ----------------------------
 # Guardrail eval
 # ----------------------------
@@ -188,7 +309,7 @@ def _extract_created_project_id(stdout: str) -> Optional[str]:
     return None
 
 
-def _base_env(adronaut_home: Path) -> Dict[str, str]:
+def _base_env(adronaut_home: Path, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     env = os.environ.copy()
     env["ADRONAUT_HOME"] = str(adronaut_home.resolve())
     env["ADRONAUT_DISABLE_DB"] = "1"
@@ -198,6 +319,10 @@ def _base_env(adronaut_home: Path) -> Dict[str, str]:
     env["ADRONAUT_LOCAL_STORAGE_DIR"] = str((adronaut_home / "local_storage").resolve())
     # Pre-approve so we can complete approval-gated steps in one shot.
     env["ADRONAUT_APPROVE"] = "1"
+
+    if extra:
+        env.update(extra)
+
     return env
 
 
@@ -251,9 +376,14 @@ def run_agent_initialize(project_name: str, inputs_path: Path, adronaut_home: Pa
     return AgentRunResult(ok=ok, gates=gates, artifacts={"stdout": out[-4000:], "stderr": err[-4000:], "config": cfg, "state": st})
 
 
-def run_agent_reflect(project_id: str, inputs_path: Path, adronaut_home: Path) -> AgentRunResult:
+def run_agent_reflect(project_id: str, inputs_path: Path, adronaut_home: Path, *, needs_change: Optional[bool] = None) -> AgentRunResult:
     """Run a reflect/adjust cycle by uploading experiment results to an existing project."""
-    env = _base_env(adronaut_home)
+
+    extra: Dict[str, str] = {}
+    if needs_change is not None:
+        extra["ADRONAUT_EVAL_NEEDS_CHANGE"] = "1" if needs_change else "0"
+
+    env = _base_env(adronaut_home, extra=extra if extra else None)
 
     rc, out, err = _run_cli(["run", "--project-id", project_id, "--inputs", str(inputs_path), "--approve"], env)
 
@@ -359,15 +489,31 @@ def run_scenario(scenario_dir: Path, out_root: Path) -> Dict[str, Any]:
     reflect_res: Optional[AgentRunResult] = None
     exp_path = scenario_dir / "experiment_results.csv"
     if project_id and exp_path.exists():
-        reflect_res = run_agent_reflect(str(project_id), exp_path, adronaut_home)
+        # Compute whether this scenario *should* require an adjustment.
+        # This is used to drive deterministic eval mode (fake LLM) so the diff-gate
+        # is exercised meaningfully.
+        g_payload = {}
+        gp = scenario_dir / "meta_guardrails.json"
+        if gp.exists():
+            try:
+                g_payload = json.loads(gp.read_text())
+            except Exception:
+                g_payload = {}
+        target_cpa = float(g_payload.get("target_cpa", 25.0))
+        exp_cpa = compute_experiment_cpa(exp_path)
+        needs_change = bool(exp_cpa is not None and exp_cpa > 1.2 * target_cpa)
+
+        reflect_res = run_agent_reflect(str(project_id), exp_path, adronaut_home, needs_change=needs_change)
 
     guard_ok, guard_details = run_guardrail_eval(scenario_dir)
 
     # Use latest config for scoring (reflect if present).
-    cfg = (reflect_res.artifacts.get("config") if reflect_res else init_res.artifacts.get("config")) or {}
+    cfg_init = (init_res.artifacts.get("config") or {})
+    cfg_reflect = (reflect_res.artifacts.get("config") if reflect_res else None)
+    cfg_latest = (cfg_reflect or cfg_init) or {}
 
     # Quality score (heuristic)
-    quality = score_quality(cfg, guardrail_ok=guard_ok)
+    quality = score_quality(cfg_latest, guardrail_ok=guard_ok)
 
     gates: Dict[str, Any] = {
         "init": init_res.gates,
@@ -378,19 +524,32 @@ def run_scenario(scenario_dir: Path, out_root: Path) -> Dict[str, Any]:
 
     # Extra gate: if reflect scenario, ensure decision was "reflect".
     reflect_gate_ok = True
+    patch_gate_ok = True
+    patch_details: Dict[str, Any] = {"ok": True, "skipped": True}
+
     if reflect_res is not None:
         reflect_gate_ok = (reflect_res.gates.get("decision") == "reflect")
         gates["reflect_decision_ok"] = reflect_gate_ok
+
+        # High-ROI diff gate: did adjustment change the right config knob?
+        patch_gate_ok, patch_details = diff_gate_reflect_adjust(
+            scenario_dir=scenario_dir,
+            init_cfg=cfg_init,
+            reflect_cfg=cfg_reflect or {},
+            guardrails_payload=(json.loads((scenario_dir / "meta_guardrails.json").read_text()) if (scenario_dir / "meta_guardrails.json").exists() else {}),
+        )
+        gates["reflect_patch_ok"] = patch_gate_ok
+        gates["reflect_patch"] = patch_details
 
     # LLM-as-judge (optional)
     judge = llm_judge_eval(
         scenario_id=sid,
         phase=("reflect" if reflect_res is not None else "initialize"),
-        config=cfg,
+        config=cfg_latest,
         guardrails=guard_details,
     )
 
-    ok = bool(init_res.ok and (reflect_res.ok if reflect_res else True) and guard_ok and reflect_gate_ok)
+    ok = bool(init_res.ok and (reflect_res.ok if reflect_res else True) and guard_ok and reflect_gate_ok and patch_gate_ok)
 
     result = {
         "scenario": sid,

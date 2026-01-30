@@ -1,0 +1,3 @@
+experiment_id,variant,date,spend,conversions
+exp_012,Meta,2026-01-10,50,0
+exp_012,TikTok,2026-01-10,50,1

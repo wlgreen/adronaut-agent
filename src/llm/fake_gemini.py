@@ -50,14 +50,31 @@ class FakeGeminiClient:
                 # already exists in the prompt, skip reflection and proceed to adjustment.
                 has_latest_reflection = "LATEST REFLECTION (JSON, if available):\nnull" not in p
 
-                steps = [
-                    {"id": "s_adjust", "action": "adjustment", "rationale": "Generate safe patch config", "success": "current_config updated", "requires_approval": True},
-                    {"id": "s_save", "action": "save", "rationale": "Persist state", "success": "state saved", "requires_approval": False},
-                ]
-                if not has_latest_reflection:
+                # Decide whether we actually need an adjustment based on latest_reflection.
+                # ReflectionSkill writes a compact summary with threshold_status.
+                cpa_ok = False
+                if has_latest_reflection:
+                    # Heuristic: detect cpa ok in latest_reflection JSON.
+                    import re
+                    cpa_ok = re.search(r"\"cpa\"\s*:\s*\"ok\"", p) is not None
+
+                import os
+                env_needs_change = os.environ.get("ADRONAUT_EVAL_NEEDS_CHANGE")
+
+                # If CPA seems ok (or scenario says no change), do not churn config: just save.
+                if has_latest_reflection and (cpa_ok or env_needs_change == "0"):
                     steps = [
-                        {"id": "s_reflect", "action": "reflection", "rationale": "Analyze experiment performance", "success": "latest_reflection summarized", "requires_approval": False},
-                    ] + steps
+                        {"id": "s_save", "action": "save", "rationale": "Persist state; no changes needed", "success": "state saved", "requires_approval": False},
+                    ]
+                else:
+                    steps = [
+                        {"id": "s_adjust", "action": "adjustment", "rationale": "Generate safe patch config", "success": "current_config updated", "requires_approval": True},
+                        {"id": "s_save", "action": "save", "rationale": "Persist state", "success": "state saved", "requires_approval": False},
+                    ]
+                    if not has_latest_reflection:
+                        steps = [
+                            {"id": "s_reflect", "action": "reflection", "rationale": "Analyze experiment performance", "success": "latest_reflection summarized", "requires_approval": False},
+                        ] + steps
 
                 return {
                     "decision": "reflect",
@@ -155,6 +172,9 @@ class FakeGeminiClient:
             # This is the core artifact we validate in eval.
             # Keep it simple, schema-complete, and deterministic.
             # Budget split: 60/40.
+            is_adjusted = "adjusted" in tn
+            target_cpa = 24.0 if is_adjusted else 25.0
+
             return {
                 "tiktok": {
                     "campaign_name": "[eval] tiktok_campaign",
@@ -168,7 +188,7 @@ class FakeGeminiClient:
                         "behaviors": ["engaged shoppers"],
                     },
                     "placements": ["TikTok"],
-                    "bidding": {"strategy": "LOWEST_COST_WITH_BID_CAP", "bid_amount": 0.0, "target_cpa": 25.0},
+                    "bidding": {"strategy": "LOWEST_COST_WITH_BID_CAP", "bid_amount": 0.0, "target_cpa": target_cpa},
                     "creative_specs": {"format": "video", "duration": "9-15s", "messaging": ["[eval] one clear benefit"]},
                     "optimization": {"optimization_goal": "CONVERSIONS", "attribution_window": "7_DAY_CLICK"},
                 },
@@ -183,7 +203,7 @@ class FakeGeminiClient:
                         "detailed_targeting": {"interests": ["fitness"], "behaviors": ["engaged shoppers"]},
                     },
                     "placements": ["facebook", "instagram"],
-                    "bidding": {"strategy": "LOWEST_COST_WITH_BID_CAP", "bid_amount": 0.0, "target_cpa": 25.0},
+                    "bidding": {"strategy": "LOWEST_COST_WITH_BID_CAP", "bid_amount": 0.0, "target_cpa": target_cpa},
                     "creative_specs": {"formats": ["image", "video"], "messaging": ["[eval] simple value prop"]},
                     "optimization": {"optimization_goal": "CONVERSIONS", "conversion_window": "7_DAY_CLICK"},
                 },
@@ -195,11 +215,43 @@ class FakeGeminiClient:
             }
 
         if "performance analysis" in tn:
+            # Try to infer whether CPA is above target from the prompt.
+            # This is intentionally heuristic; it exists to drive reflect/adjust eval gates.
+            import re
+
+            p = prompt or ""
+
+            # Extract target_cpa from the prompt (defaults in reflection.py: 25.0)
+            m = re.search(r"target_cpa\s*=\s*([0-9]+(?:\.[0-9]+)?)", p)
+            target_cpa = float(m.group(1)) if m else 25.0
+
+            # Prefer explicit cpa fields if present
+            cpas = [float(x) for x in re.findall(r"\"cpa\"\s*:\s*([0-9]+(?:\.[0-9]+)?)", p)]
+            blended_cpa = None
+            if cpas:
+                blended_cpa = sum(cpas) / len(cpas)
+            else:
+                spends = [float(x) for x in re.findall(r"\"spend\"\s*:\s*([0-9]+(?:\.[0-9]+)?)", p)]
+                convs = [float(x) for x in re.findall(r"\"conversions\"\s*:\s*([0-9]+(?:\.[0-9]+)?)", p)]
+                if spends and convs and len(spends) == len(convs):
+                    s = sum(spends)
+                    c = sum(convs)
+                    if c > 0:
+                        blended_cpa = s / c
+
+            status = {"cpa": "unknown", "roas": "ok"}
+            if blended_cpa is None:
+                status["cpa"] = "unknown"
+            elif blended_cpa > 1.2 * target_cpa:
+                status["cpa"] = "high"
+            else:
+                status["cpa"] = "ok"
+
             return {
-                "summary": "[eval] Performance within expected range",
-                "threshold_status": {"cpa": "ok", "roas": "ok"},
-                "diagnosis": ["[eval] not enough data"],
-                "recommendations": ["[eval] keep learning"],
+                "summary": "[eval] Deterministic performance analysis",
+                "threshold_status": status,
+                "diagnosis": ["[eval] heuristic"],
+                "recommendations": ["[eval] adjust if CPA high"],
             }
 
         if "optimization patch generation" in tn:
