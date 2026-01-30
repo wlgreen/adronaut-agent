@@ -411,22 +411,74 @@ def run_agent_reflect(project_id: str, inputs_path: Path, adronaut_home: Path, *
 # ----------------------------
 
 
-def llm_judge_eval(*, scenario_id: str, phase: str, config: Dict[str, Any], guardrails: Dict[str, Any]) -> Dict[str, Any]:
-    """Optional LLM-as-judge scoring.
+def _openai_judge_json(*, model: str, prompt: str) -> Dict[str, Any]:
+    """Call OpenAI Responses API and force JSON output.
 
-    This uses a *real* Gemini call if GEMINI_API_KEY is set. Otherwise it's skipped.
+    Uses stdlib only (no extra deps).
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if api_key:
-        # Import direct client to bypass eval-mode fake.
-        from src.llm.gemini import GeminiClient
-        judge = GeminiClient()
-        judge_kind = "real"
-    else:
-        # Fall back to deterministic fake judge so eval output is always populated.
-        from src.llm.fake_gemini import FakeGeminiClient
-        judge = FakeGeminiClient()
-        judge_kind = "fake"
+    import urllib.request
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set")
+
+    url = "https://api.openai.com/v1/responses"
+
+    payload = {
+        "model": model,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.0,
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        raw = resp.read().decode("utf-8")
+
+    data = json.loads(raw)
+
+    # Responses API returns a list of output items; we want the text.
+    # Typical: data["output"][0]["content"][0]["text"]
+    out_items = data.get("output") or []
+    text = None
+    for item in out_items:
+        for c in (item.get("content") or []):
+            if c.get("type") == "output_text":
+                text = c.get("text")
+                break
+        if text:
+            break
+
+    if not text:
+        raise ValueError(f"No output_text found in response: keys={list(data.keys())}")
+
+    return json.loads(text)
+
+
+def llm_judge_eval(*, scenario_id: str, phase: str, config: Dict[str, Any], guardrails: Dict[str, Any]) -> Dict[str, Any]:
+    """LLM-as-judge scoring.
+
+    Provider selection:
+    - ADRONAUT_JUDGE_PROVIDER=codex -> OpenAI judge (model defaults to gpt-5.2)
+    - otherwise: Gemini if GEMINI_API_KEY set, else deterministic fake
+    """
+    provider = (os.getenv("ADRONAUT_JUDGE_PROVIDER") or "").strip().lower()
 
     rubric = {
         "plan_quality": "Coherent, testable, minimal fluff",
@@ -449,21 +501,46 @@ def llm_judge_eval(*, scenario_id: str, phase: str, config: Dict[str, Any], guar
         "}"
     )
 
+    # 1) Codex/OpenAI judge
+    if provider in ("codex", "openai"):
+        model = os.getenv("ADRONAUT_JUDGE_MODEL", "gpt-5.2")
+        try:
+            out = _openai_judge_json(model=model, prompt=prompt)
+        except Exception as e:
+            return {"ok": False, "error": str(e), "judge_kind": "codex", "model": model}
+
+        overall_0_5 = float((out or {}).get("overall", 0) or 0)
+        overall_0_100 = max(0.0, min(100.0, (overall_0_5 / 5.0) * 100.0))
+        return {"ok": True, "judge": out, "overall_0_100": round(overall_0_100, 2), "judge_kind": "codex", "model": model}
+
+    # 2) Gemini judge (if available)
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        from src.llm.gemini import GeminiClient
+
+        judge = GeminiClient()
+        judge_kind = "gemini"
+        try:
+            out = judge.generate_json(prompt=prompt, system_instruction=None, temperature=0.0, task_name="E2E Judge")
+        except Exception as e:
+            return {"ok": False, "error": str(e), "judge_kind": judge_kind}
+
+        overall_0_5 = float((out or {}).get("overall", 0) or 0)
+        overall_0_100 = max(0.0, min(100.0, (overall_0_5 / 5.0) * 100.0))
+        return {"ok": True, "judge": out, "overall_0_100": round(overall_0_100, 2), "judge_kind": judge_kind}
+
+    # 3) Deterministic fake judge (default)
+    from src.llm.fake_gemini import FakeGeminiClient
+
+    judge = FakeGeminiClient()
     try:
         out = judge.generate_json(prompt=prompt, system_instruction=None, temperature=0.0, task_name="E2E Judge")
     except Exception as e:
-        return {"ok": False, "error": str(e), "judge_kind": judge_kind}
+        return {"ok": False, "error": str(e), "judge_kind": "fake"}
 
-    scores = (out or {}).get("scores") or {}
-    try:
-        overall_0_5 = float((out or {}).get("overall", 0))
-    except Exception:
-        overall_0_5 = 0.0
-
-    # Convert to 0-100 for easier trending.
+    overall_0_5 = float((out or {}).get("overall", 0) or 0)
     overall_0_100 = max(0.0, min(100.0, (overall_0_5 / 5.0) * 100.0))
-
-    return {"ok": True, "judge": out, "overall_0_100": round(overall_0_100, 2), "judge_kind": judge_kind}
+    return {"ok": True, "judge": out, "overall_0_100": round(overall_0_100, 2), "judge_kind": "fake"}
 
 
 def run_scenario(scenario_dir: Path, out_root: Path) -> Dict[str, Any]:

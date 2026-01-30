@@ -107,12 +107,27 @@ The harness includes an optional **judge step** for scoring qualities that are h
 
 ### Judge modes
 
-- **Real judge**: if `GEMINI_API_KEY` is set
-  - Uses `GeminiClient()` directly (bypasses eval fake) with temperature 0.
-- **Fake judge**: if `GEMINI_API_KEY` is not set
-  - Uses `FakeGeminiClient()` and returns deterministic scores.
+You can choose the judge provider via env:
+
+- `ADRONAUT_JUDGE_PROVIDER=codex` (recommended)
+  - Uses OpenAI Responses API with `ADRONAUT_JUDGE_MODEL` (default: `gpt-5.2`).
+  - Requires `OPENAI_API_KEY`.
+
+- Default behavior (if `ADRONAUT_JUDGE_PROVIDER` not set):
+  - **Gemini judge** if `GEMINI_API_KEY` is set (uses `GeminiClient()` with temperature 0)
+  - otherwise **Fake judge** (deterministic `FakeGeminiClient()`)
 
 This means `result.json` / `results.jsonl` always contains a `judge` field.
+
+### Judge usage (Codex / gpt-5.2)
+
+```bash
+export ADRONAUT_JUDGE_PROVIDER=codex
+export ADRONAUT_JUDGE_MODEL=gpt-5.2
+export OPENAI_API_KEY=...
+
+python3 scripts/eval_runner.py --scenarios tests/fixtures/eval --out tmp/eval_runs
+```
 
 ### Judge rubric (v1)
 
