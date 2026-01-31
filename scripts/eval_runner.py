@@ -26,6 +26,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Load .env if present so GEMINI_API_KEY / OPENAI_API_KEY work in local runs.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
